@@ -94,9 +94,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     cities_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Санкт-Петербург", callback_data="city_spb")],
-        [InlineKeyboardButton(text="Москва", callback_data="city_moscow")],
-        [InlineKeyboardButton(text="Отмена", callback_data="return_main")]
+        [InlineKeyboardButton(text="Москва", callback_data="city_moscow")]
     ])
 
     await state.set_state(BookingState.choosing_city)
@@ -109,8 +107,7 @@ async def choose_city(callback: CallbackQuery, state: FSMContext):
     await state.update_data(city=callback.data.split("_")[1])  # Сохраняем город в память
 
     clinics_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Клиника №1 (Центр)", callback_data="clinic_1")],
-        [InlineKeyboardButton(text="Клиника №2 (Север)", callback_data="clinic_2")],
+        [InlineKeyboardButton(text="Зубная фея", callback_data="clinic_1")],
         [InlineKeyboardButton(text="Отмена", callback_data="return_main")]
     ])
 
@@ -139,8 +136,12 @@ async def choose_date(callback: CallbackQuery, state: FSMContext):
     await state.update_data(date=callback.data)
 
     time_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Утро (09:00 - 12:00)", callback_data="time_morning")],
-        [InlineKeyboardButton(text="День (12:00 - 16:00)", callback_data="time_day")],
+        [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_morning")],
+        [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_day")],
+        [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_day")],
+        [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_day")],
+        [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_day")],
+        [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_day")],
         [InlineKeyboardButton(text="Отмена", callback_data="return_main")]
     ])
 
@@ -203,4 +204,5 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+
         print('Exit')
