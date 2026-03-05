@@ -1,4 +1,6 @@
 import asyncio
+import calendar
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -33,6 +35,59 @@ consent_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 
+MONTH_NAMES = [
+    "Январь","Февраль","Март","Апрель","Май","Июнь",
+    "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"
+]
+
+
+def calendar_kb(year, month):
+
+    cal = calendar.monthcalendar(year, month)
+    keyboard = []
+
+    month_title = f"{MONTH_NAMES[month-1]} {year}"
+
+    keyboard.append([
+        InlineKeyboardButton(text=month_title, callback_data="ignore")
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(text="Пн", callback_data="ignore"),
+        InlineKeyboardButton(text="Вт", callback_data="ignore"),
+        InlineKeyboardButton(text="Ср", callback_data="ignore"),
+        InlineKeyboardButton(text="Чт", callback_data="ignore"),
+        InlineKeyboardButton(text="Пт", callback_data="ignore"),
+        InlineKeyboardButton(text="Сб", callback_data="ignore"),
+        InlineKeyboardButton(text="Вс", callback_data="ignore")
+    ])
+
+    for week in cal:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                row.append(
+                    InlineKeyboardButton(
+                        text=str(day),
+                        callback_data=f"day_{year}_{month}_{day}"
+                    )
+                )
+        keyboard.append(row)
+
+    keyboard.append([
+        InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"),
+        InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}")
+    ])
+
+    keyboard.append([
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
@@ -51,6 +106,17 @@ def get_back_to_main_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔙 Вернуться на главную", callback_data="return_main")]
     ])
 
+def clinics_kb():
+
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Клиника №1 (ст. м. ВДНХ)", callback_data="clinic_1")],
+        [InlineKeyboardButton(text="Клиника №2 (ст. м. Лубянка)", callback_data="clinic_2")],
+        [InlineKeyboardButton(text="Клиника №3 (ст. м. Бауманская)", callback_data="clinic_3")],
+        [
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_city"),
+            InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+        ]
+    ])
 
 # --- Обработчики старта и согласия ---
 @dp.message(CommandStart())
@@ -114,61 +180,68 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(BookingState.choosing_city, F.data.startswith("city_"))
 async def choose_city(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await state.update_data(city=callback.data.split("_")[1])  # Сохраняем город в память
+    city_map = {
+        "city_moscow": "Москва"
+    }
 
-    def clinics_kb() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Клиника №1 (ст. м. ВДНХ)", callback_data="clinic_1")],
-            [InlineKeyboardButton(text="Клиника №2 (ст. м. Лубянка)", callback_data="clinic_2")],
-            [InlineKeyboardButton(text="Клиника №3 (ст. м. Бауманская)", callback_data="clinic_3")],
-            [
-                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_city"),
-                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-            ]
-        ])
+    await state.update_data(city=city_map[callback.data])
+
 
     await state.set_state(BookingState.choosing_clinic)
+    progress = await get_progress_text(state)
+
     await callback.message.edit_text(
-        "🏥 Шаг 2: Выберите клинику:",
+        f"{progress}🏥 Выберите клинику:",
         reply_markup=clinics_kb()
     )
-
 
 @dp.callback_query(BookingState.choosing_clinic, F.data.startswith("clinic_"))
 async def choose_clinic(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await state.update_data(clinic=callback.data)
+    clinic_map = {
+        "clinic_1": "Клиника №1 (ст. м. ВДНХ)",
+        "clinic_2": "Клиника №2 (ст. м. Лубянка)",
+        "clinic_3": "Клиника №3 (ст. м. Бауманская)"
+    }
 
-    def dates_kb() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Завтра", callback_data="date_tmrw")],
-            [InlineKeyboardButton(text="Послезавтра", callback_data="date_after_tmrw")],
-            [
-                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
-                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-            ]
-        ])
+    await state.update_data(clinic=clinic_map[callback.data])
+
+    now = datetime.now()
 
     await state.set_state(BookingState.choosing_date)
+
+    progress = await get_progress_text(state)
+
     await callback.message.edit_text(
-        "📅 Шаг 3: Выберите желаемую дату:",
-        reply_markup=dates_kb()
+        f"{progress}📅 Выберите дату:",
+        reply_markup=calendar_kb(now.year, now.month)
     )
 
 
-@dp.callback_query(BookingState.choosing_date, F.data.startswith("date_"))
-async def choose_date(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.update_data(date=callback.data)
+@dp.callback_query(BookingState.choosing_date, F.data.startswith("day_"))
+async def choose_day(callback: CallbackQuery, state: FSMContext):
 
-    def times_kb() -> InlineKeyboardMarkup:
+    await callback.answer()
+
+    _, year, month, day = callback.data.split("_")
+
+    month_name = [
+        "января", "февраля", "марта", "апреля", "мая", "июня",
+        "июля", "августа", "сентября", "октября", "ноября", "декабря"
+    ]
+
+    date_text = f"{day} {month_name[int(month) - 1]} {year}"
+
+    await state.update_data(date=date_text)
+
+    def times_kb():
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_morning")],
-            [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_day_1")],
-            [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_day_2")],
-            [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_day_3")],
-            [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_day_4")],
-            [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_day_5")],
+            [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_8")],
+            [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_10")],
+            [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_12")],
+            [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_14")],
+            [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_16")],
+            [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_18")],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_date"),
                 InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
@@ -176,9 +249,73 @@ async def choose_date(callback: CallbackQuery, state: FSMContext):
         ])
 
     await state.set_state(BookingState.choosing_time)
+
+    progress = await get_progress_text(state)
+
     await callback.message.edit_text(
-        "⏰ Шаг 4: Выберите диапазон времени:",
+        f"{progress}⏰ Выберите время:",
         reply_markup=times_kb()
+    )
+
+async def get_progress_text(state: FSMContext):
+
+    data = await state.get_data()
+
+    text = ""
+
+    if data.get("city"):
+        text += f"📍 {data['city']}\n"
+
+    if data.get("clinic"):
+        text += f"🏥 {data['clinic']}\n"
+
+    if data.get("date"):
+        text += f"📅 {data['date']}\n"
+
+    if data.get("time"):
+        text += f"⏰ {data['time']}:00\n"
+
+    if text:
+        text += "\n"
+
+    return text
+
+
+@dp.callback_query(F.data.startswith("next_"))
+async def next_month(callback: CallbackQuery):
+
+    await callback.answer()
+
+    _, year, month = callback.data.split("_")
+
+    year = int(year)
+    month = int(month) + 1
+
+    if month > 12:
+        month = 1
+        year += 1
+
+    await callback.message.edit_reply_markup(
+        reply_markup=calendar_kb(year, month)
+    )
+
+
+@dp.callback_query(F.data.startswith("prev_"))
+async def prev_month(callback: CallbackQuery):
+
+    await callback.answer()
+
+    _, year, month = callback.data.split("_")
+
+    year = int(year)
+    month = int(month) - 1
+
+    if month < 1:
+        month = 12
+        year -= 1
+
+    await callback.message.edit_reply_markup(
+        reply_markup=calendar_kb(year, month)
     )
 
 
@@ -186,16 +323,70 @@ async def choose_date(callback: CallbackQuery, state: FSMContext):
 async def choose_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    # Здесь мы забираем все ответы, которые пользователь давал на предыдущих шагах
     user_data = await state.get_data()
 
-    # Очищаем состояние, так как процесс завершен
-    await state.clear()
+    city = user_data.get("city")
+    clinic = user_data.get("clinic")
+    date = user_data.get("date")
+    time_map = {
+        "time_8": "08:00 - 10:00",
+        "time_10": "10:00 - 12:00",
+        "time_12": "12:00 - 14:00",
+        "time_14": "14:00 - 16:00",
+        "time_16": "16:00 - 18:00",
+        "time_18": "18:00 - 20:00"
+    }
+
+    time = time_map[callback.data]
+
+    await state.update_data(time=time)
+
+    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_booking")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_time")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="return_main")]
+    ])
 
     await callback.message.edit_text(
-        "✅ Заявка сформирована!\n\n"
-        "Администратор клиники свяжется с вами для уточнения и согласования даты и времени записи.",
-        reply_markup=get_back_to_main_kb()
+        f"""
+Проверьте данные записи:
+
+📍 Город: {city}
+🏥 Клиника: {clinic}
+📅 Дата: {date}
+⏰ Время: {time}
+
+Подтвердить запись?
+""",
+        reply_markup=confirm_kb
+    )
+
+@dp.callback_query(F.data == "back_to_time")
+async def back_to_time(callback: CallbackQuery, state: FSMContext):
+
+    await callback.answer()
+
+    progress = await get_progress_text(state)
+
+    def times_kb():
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_8")],
+            [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_10")],
+            [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_12")],
+            [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_14")],
+            [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_16")],
+            [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_18")],
+            [
+                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_date"),
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+            ]
+        ])
+
+    await state.set_state(BookingState.choosing_time)
+
+    await callback.message.edit_text(
+        f"{progress}⏰ Выберите время:",
+        reply_markup=times_kb()
     )
 
 
@@ -214,36 +405,58 @@ async def back_to_city(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BookingState.choosing_city)
     await callback.message.edit_text("📍 Шаг 1: Выберите ваш город:", reply_markup=cities_markup)
 
+@dp.callback_query(F.data == "confirm_booking")
+async def confirm_booking(callback: CallbackQuery, state: FSMContext):
+
+    await callback.answer()
+
+    data = await state.get_data()
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        f"""
+✅ Заявка успешно создана!
+
+📍 {data['city']}
+🏥 {data['clinic']}
+📅 {data['date']}
+⏰ {data['time']}
+
+Администратор клиники свяжется с вами для подтверждения записи.
+""",
+        reply_markup=get_back_to_main_kb()
+    )
+
 
 @dp.callback_query(BookingState.choosing_date, F.data == "back_to_clinic")
 async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    clinics_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Клиника №1 (ст. м. ВДНХ)", callback_data="clinic_1")],
-        [InlineKeyboardButton(text="Клиника №2 (ст. м. Лубянка)", callback_data="clinic_2")],
-        [InlineKeyboardButton(text="Клиника №3 (ст. м. Бауманская)", callback_data="clinic_3")],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_city"),
-            InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-        ]
-    ])
-    await state.set_state(BookingState.choosing_clinic)
-    await callback.message.edit_text("🏥 Шаг 2: Выберите клинику:", reply_markup=clinics_markup)
 
+    await callback.answer()
+
+    await state.set_state(BookingState.choosing_clinic)
+
+    progress = await get_progress_text(state)
+
+    await callback.message.edit_text(
+        f"{progress}🏥 Выберите клинику:",
+        reply_markup=clinics_kb()
+    )
 
 @dp.callback_query(BookingState.choosing_time, F.data == "back_to_date")
 async def back_to_date(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    dates_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Завтра", callback_data="date_tmrw")],
-        [InlineKeyboardButton(text="Послезавтра", callback_data="date_after_tmrw")],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
-            InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-        ]
-    ])
+
+    now = datetime.now()
+
     await state.set_state(BookingState.choosing_date)
-    await callback.message.edit_text("📅 Шаг 3: Выберите желаемую дату:", reply_markup=dates_markup)
+
+    progress = await get_progress_text(state)
+
+    await callback.message.edit_text(
+        f"{progress}📅 Выберите дату:",
+        reply_markup=calendar_kb(now.year, now.month)
+    )
 
 
 # --- Обработчик возврата в главное меню ---
