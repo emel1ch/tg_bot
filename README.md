@@ -46,10 +46,3 @@
 * Telegram Web App SDK (`@twa-dev/sdk`)
 
 ---
-
-## 🚀 Локальный запуск (Getting Started)
-
-### 1. Клонирование репозитория
-```bash
-git clone [https://github.com/your-username/idu-k-vrachu.git](https://github.com/your-username/idu-k-vrachu.git)
-cd idu-k-vrachu
