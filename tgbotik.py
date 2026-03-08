@@ -13,6 +13,9 @@ from config import TOKEN, GROUP_ID
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+git add .
+git commit -m "Описание того, что было сделано"
+git push
 
 # --- Состояния ---
 class UserState(StatesGroup):
