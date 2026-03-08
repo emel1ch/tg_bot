@@ -8,7 +8,7 @@ from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.filters import StateFilter
-from config import TOKEN
+from config import TOKEN, GROUP_ID
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -18,6 +18,9 @@ dp = Dispatcher()
 class UserState(StatesGroup):
     waiting_for_consent = State()
 
+
+class SupportState(StatesGroup):
+    waiting_for_message = State()
 
 # Состояния для пошаговой записи к врачу (FSM)
 class BookingState(StatesGroup):
@@ -39,6 +42,13 @@ MONTH_NAMES = [
     "Январь","Февраль","Март","Апрель","Май","Июнь",
     "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"
 ]
+
+
+#исправление зависание календаря при клике на пустые клетки и дни недели
+    @dp.callback_query(F.data == "ignore")
+    async def ignore_calendar_clicks(callback: CallbackQuery):
+        # Просто гасим "часики", ничего не делая
+        await callback.answer()
 
 
 def calendar_kb(year, month):
@@ -282,8 +292,9 @@ async def get_progress_text(state: FSMContext):
     return text
 
 
-@dp.callback_query(F.data.startswith("next_"))
+@dp.callback_query(BookingState.choosing_date, F.data.startswith("next_"))
 async def next_month(callback: CallbackQuery):
+
 
     await callback.answer()
 
@@ -301,7 +312,7 @@ async def next_month(callback: CallbackQuery):
     )
 
 
-@dp.callback_query(F.data.startswith("prev_"))
+@dp.callback_query(BookingState.choosing_date,F.data.startswith("prev_"))
 async def prev_month(callback: CallbackQuery):
 
     await callback.answer()
@@ -483,14 +494,66 @@ async def process_my_records(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data == "menu_support")
-async def process_support(callback: CallbackQuery):
+async def process_support(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    await state.set_state(SupportState.waiting_for_message)
+
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="return_main")]
+    ])
+
     await callback.message.edit_text(
-        "💬 Чат со специалистом временно недоступен. Пожалуйста, попробуйте позже.",
-        reply_markup=get_back_to_main_kb()
+        "💬 Напишите ваш вопрос одним сообщением ниже.\n\n"
+        "Специалисты поддержки получат его и ответят вам прямо в этом чате.",
+        reply_markup=cancel_kb
     )
 
 
+# Пересылка в группу админов
+@dp.message(SupportState.waiting_for_message)
+async def forward_to_group(message: Message, state: FSMContext):
+    user_info = f"👤 Пользователь: {message.from_user.full_name}\n"
+    user_info += f"🆔 ID: {message.from_user.id}\n"
+    if message.from_user.username:
+        user_info += f"🔗 @{message.from_user.username}\n"
+
+    admin_text = f"🚨 #Новое_обращение\n\n{user_info}\n📝 Текст:\n{message.text}"
+
+    try:
+        await bot.send_message(chat_id=GROUP_ID, text=admin_text)
+        await state.clear()
+        await message.answer(
+            "✅ Ваше сообщение успешно отправлено специалистам!\nОжидайте ответа.",
+            reply_markup=get_main_menu_kb()
+        )
+    except Exception as e:
+        await message.answer("Произошла ошибка при отправке. Попробуйте позже.")
+        print(f"Ошибка пересылки в группу: {e}")
+
+
+# Обработка ответа от админа из группы
+@dp.message(F.chat.id == GROUP_ID, F.reply_to_message)
+async def reply_from_group(message: Message):
+    # Проверяем, что админ ответил именно на сообщение бота
+    if message.reply_to_message.from_user.id != bot.id:
+        return
+
+    original_text = message.reply_to_message.text
+    if not original_text:
+        return
+
+    # Ищем ID пользователя в оригинальном сообщении
+    if "🆔 ID: " in original_text:
+        try:
+            user_id_str = original_text.split("🆔 ID: ")[1].split("\n")[0]
+            user_id = int(user_id_str)
+
+            answer_text = f"💬 Ответ от поддержки:\n\n{message.text}"
+            await bot.send_message(chat_id=user_id, text=answer_text)
+
+            await message.reply("✅ Ответ успешно переслан пользователю.")
+        except Exception as e:
+            await message.reply(f"❌ Ошибка пересылки ответа: {e}")
 async def main():
     await dp.start_polling(bot)
 
