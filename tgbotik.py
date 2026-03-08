@@ -156,6 +156,7 @@ async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
 
 
 # --- FSM: Сценарий "Запись к врачу" ---
+
 @dp.callback_query(F.data == "menu_book_appointment")
 async def start_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -323,6 +324,7 @@ async def prev_month(callback: CallbackQuery):
 async def choose_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
+    # Здесь мы забираем все ответы, которые пользователь давал на предыдущих шагах
     user_data = await state.get_data()
 
     city = user_data.get("city")
