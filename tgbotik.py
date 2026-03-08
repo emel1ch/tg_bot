@@ -1,6 +1,5 @@
 import asyncio
 import calendar
-import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -9,12 +8,9 @@ from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.filters import StateFilter
+from config import TOKEN
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-bot = Bot(token="7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU")
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
@@ -96,7 +92,8 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
                               url="https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k")],
-        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://green-olives-pick.loca.lt"))],
+        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://ya.ru"))],
+        # Замени на HTTPS ссылку твоего веб-сервиса
         [InlineKeyboardButton(text="📅 Запись к врачу", callback_data="menu_book_appointment")],
         [InlineKeyboardButton(text="📋 Мои записи", callback_data="menu_my_records")],
         [InlineKeyboardButton(text="💬 Написать нам", callback_data="menu_support")]
@@ -159,6 +156,7 @@ async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
 
 
 # --- FSM: Сценарий "Запись к врачу" ---
+
 @dp.callback_query(F.data == "menu_book_appointment")
 async def start_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -326,6 +324,7 @@ async def prev_month(callback: CallbackQuery):
 async def choose_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
+    # Здесь мы забираем все ответы, которые пользователь давал на предыдущих шагах
     user_data = await state.get_data()
 
     city = user_data.get("city")
@@ -462,12 +461,6 @@ async def back_to_date(callback: CallbackQuery, state: FSMContext):
     )
 
 
-# --- Обработчик нажатий на заголовки календаря (игнорируем) ---
-@dp.callback_query(F.data == "ignore")
-async def ignore_callback(callback: CallbackQuery):
-    await callback.answer()
-
-
 # --- Обработчик возврата в главное меню ---
 @dp.callback_query(F.data == "return_main")
 async def return_to_main(callback: CallbackQuery, state: FSMContext):
@@ -499,7 +492,6 @@ async def process_support(callback: CallbackQuery):
 
 
 async def main():
-    logger.info("Бот запускается...")
     await dp.start_polling(bot)
 
 
@@ -508,5 +500,3 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         print('Exit')
-    except Exception as e:
-        logger.error(f"Бот упал с ошибкой: {e}", exc_info=True)
