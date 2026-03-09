@@ -2,20 +2,19 @@ import asyncio
 import calendar
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import CommandStart, StateFilter
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.filters import StateFilter
 from config import TOKEN, GROUP_ID
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-
 # --- Состояния ---
 class UserState(StatesGroup):
+    waiting_for_phone = State()
     waiting_for_consent = State()
 
 
@@ -37,6 +36,15 @@ consent_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✅ Я даю согласие", callback_data="accept_consent")]
 ])
 
+#клавиатура для телефона
+phone_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📱 Поделиться номером телефона", request_contact=True)]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
+
 
 MONTH_NAMES = [
     "Январь","Февраль","Март","Апрель","Май","Июнь",
@@ -45,10 +53,9 @@ MONTH_NAMES = [
 
 
 #исправление зависание календаря при клике на пустые клетки и дни недели
-    @dp.callback_query(F.data == "ignore")
-    async def ignore_calendar_clicks(callback: CallbackQuery):
-        # Просто гасим "часики", ничего не делая
-        await callback.answer()
+@dp.callback_query(F.data == "ignore")
+async def ignore_calendar_clicks(callback: CallbackQuery):
+    await callback.answer()
 
 
 def calendar_kb(year, month):
@@ -149,22 +156,46 @@ async def block_unconsented_user(message: Message):
         "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота.")
 
 
-@dp.callback_query(F.data == "accept_consent") # Убрали UserState.waiting_for_consent
+@dp.callback_query(F.data == "accept_consent")
 async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
-    # Очищаем состояние, если оно было
-    await state.clear()
-
-    # Убираем "часики" загрузки на кнопке
     await callback.answer("Согласие получено!", show_alert=False)
 
-    # Меняем сообщение на главное меню
-    await callback.message.edit_text(
-        "Спасибо! Теперь вам доступен весь интерфейс.\n\n"
+    # Удаляем сообщение с документом согласия, чтобы оно не висело в чате
+    await callback.message.delete()
+
+    # Переводим в состояние ожидания телефона
+    await state.set_state(UserState.waiting_for_phone)
+
+    # Запрашиваем телефон и показываем Reply-клавиатуру
+    await callback.message.answer(
+        "Спасибо! Теперь, пожалуйста, поделитесь вашим номером телефона.\n"
+        "Это необходимо для связи и идентификации ваших записей к врачу.",
+        reply_markup=phone_kb
+    )
+
+#сбор номера телефона
+@dp.message(UserState.waiting_for_phone)
+async def process_phone(message: Message, state: FSMContext):
+    # Достаем номер телефона (если нажал кнопку - берем из контакта, если ввел руками - из текста)
+    if message.contact:
+        phone = message.contact.phone_number
+    else:
+        phone = message.text
+
+    # (В будущем здесь будет код для сохранения телефона в базу данных)
+
+    # Очищаем состояние
+    await state.clear()
+
+    # Сначала отправляем сообщение, чтобы удалить огромную кнопку телефона (ReplyKeyboardRemove)
+    await message.answer("✅ Номер успешно получен!", reply_markup=ReplyKeyboardRemove())
+
+    # И сразу следом выдаем главное меню с Inline-кнопками
+    await message.answer(
+        "Теперь вам доступен весь интерфейс.\n\n"
         "Выберите нужный раздел:",
         reply_markup=get_main_menu_kb()
     )
-
-
 # --- FSM: Сценарий "Запись к врачу" ---
 
 @dp.callback_query(F.data == "menu_book_appointment")
