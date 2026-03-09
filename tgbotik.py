@@ -135,10 +135,11 @@ def clinics_kb():
         ]
     ])
 
-# --- Обработчики старта и согласия ---
+# --- Обработчики старта, согласия и телефона ---
+
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()  # Сбрасываем любые старые состояния при перезапуске
+    await state.clear()  # Сбрасываем старые состояния
 
     welcome_text = (
         "Привет! Я цифровой помощник «Иду к врачу».\n\n"
@@ -146,51 +147,54 @@ async def cmd_start(message: Message, state: FSMContext):
         "Для продолжения работы мне необходимо ваше согласие на обработку персональных данных. "
         "Пожалуйста, ознакомьтесь с документом по ссылке ниже и подтвердите согласие."
     )
+    # Шаг 1: Ждем согласия
     await state.set_state(UserState.waiting_for_consent)
     await message.answer(welcome_text, reply_markup=consent_kb)
 
 
 @dp.message(UserState.waiting_for_consent)
 async def block_unconsented_user(message: Message):
+    # Если юзер пишет текст, пока мы ждем согласие
     await message.answer(
-        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота.")
+        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота."
+    )
 
 
 @dp.callback_query(F.data == "accept_consent")
 async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Согласие получено!", show_alert=False)
-
-    # Удаляем сообщение с документом согласия, чтобы оно не висело в чате
     await callback.message.delete()
 
-    # Переводим в состояние ожидания телефона
+    # Шаг 2: Переводим в состояние ожидания телефона
     await state.set_state(UserState.waiting_for_phone)
 
-    # Запрашиваем телефон и показываем Reply-клавиатуру
     await callback.message.answer(
         "Спасибо! Теперь, пожалуйста, поделитесь вашим номером телефона.\n"
-        "Это необходимо для связи и идентификации ваших записей к врачу.",
+        "Вы можете нажать кнопку ниже или просто отправить номер сообщением.",
         reply_markup=phone_kb
     )
 
-#сбор номера телефона
+
 @dp.message(UserState.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
-    # Достаем номер телефона (если нажал кнопку - берем из контакта, если ввел руками - из текста)
+    # Обрабатываем и кнопку, и ручной ввод
     if message.contact:
         phone = message.contact.phone_number
     else:
         phone = message.text
+
+    # Сохраняем номер в память
+    await state.update_data(user_phone=phone)
 
     # (В будущем здесь будет код для сохранения телефона в базу данных)
 
     # Очищаем состояние
     await state.clear()
 
-    # Сначала отправляем сообщение, чтобы удалить огромную кнопку телефона (ReplyKeyboardRemove)
+    # Удаляем кнопку телефона с экрана
     await message.answer("✅ Номер успешно получен!", reply_markup=ReplyKeyboardRemove())
 
-    # И сразу следом выдаем главное меню с Inline-кнопками
+    # Выдаем главное меню один раз
     await message.answer(
         "Теперь вам доступен весь интерфейс.\n\n"
         "Выберите нужный раздел:",
