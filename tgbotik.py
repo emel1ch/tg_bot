@@ -212,6 +212,21 @@ async def block_unconsented_user(message: Message):
     )
 
 
+@dp.callback_query(F.data == "accept_consent")
+async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
+    await callback.answer("Согласие получено!", show_alert=False)
+    await callback.message.delete()
+
+    # Шаг 2: Переводим в состояние ожидания телефона
+    await state.set_state(UserState.waiting_for_phone)
+
+    await callback.message.answer(
+        "Спасибо! Теперь, пожалуйста, поделитесь вашим номером телефона.\n"
+        "Вы можете нажать кнопку ниже или просто отправить номер сообщением.",
+        reply_markup=phone_kb
+    )
+
+
 @dp.message(UserState.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
     # Если юзер нажал кнопку - Телеграм сам гарантирует, что это валидный телефон
