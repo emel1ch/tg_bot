@@ -2,7 +2,7 @@ name: CI/CD Deploy
 
 on:
   push:
-    branches: [ "main" ]   # Запускается при каждом push в ветку main
+    branches: [ "master" ]   # Запускается при каждом push в ветку master
 
 jobs:
   deploy:
