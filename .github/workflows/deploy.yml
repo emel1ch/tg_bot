@@ -19,6 +19,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}   # Пользователь (root)
           key: ${{ secrets.SSH_PRIVATE_KEY }}    # Приватный SSH-ключ
           script: |
-            cd /root/tg_bot                      # Путь к папке проекта на сервере
-            git pull origin main
+            if [ ! -d "/root/tg_bot" ]; then
+              git clone https://github.com/emel1ch/tg_bot.git /root/tg_bot
+            fi
+            cd /root/tg_bot
+            git pull origin deploy
             docker-compose up -d --build
