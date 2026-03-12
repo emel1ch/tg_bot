@@ -2,7 +2,7 @@ import re
 import os
 import asyncio
 import calendar
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
@@ -12,7 +12,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.filters import StateFilter
 from config import TOKEN, GROUP_ID
 
-bot = Bot(token=os.getenv("BOT_TOKEN", ""))
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # --- Жесткая привязка к Московскому времени (UTC+3) ---
