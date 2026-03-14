@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* webapp/src/index.css */
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #fafafa;
+  color: #222;
+}
+.container {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 16px;
+}
+button {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #bbb;
+  background: #fff;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+h1, h2 { margin: 8px 0; }
