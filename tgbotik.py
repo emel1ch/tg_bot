@@ -12,8 +12,55 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.filters import StateFilter
 from config import TOKEN, GROUP_ID
 
+from database import (
+    init_db,
+    create_or_update_user,
+    create_appointment,
+    get_user_appointments,
+    get_due_day_reminders,
+    get_due_hour_reminders,
+    mark_day_reminded,
+    mark_hour_reminded,
+)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+
+# Уведомление для пользователя
+async def reminder_worker():
+    while True:
+        try:
+            day_reminders = await get_due_day_reminders()
+            for appt in day_reminders:
+                await bot.send_message(
+                    appt.user_id,
+                    f"🔔 Напоминание!\n\n"
+                    f"У вас завтра запись к врачу.\n"
+                    f"🏥 {appt.place}\n"
+                    f"📍 {appt.city}\n"
+                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+                    f"⏰ {appt.time_slot}"
+                )
+                await mark_day_reminded(appt.order_id)
+
+            hour_reminders = await get_due_hour_reminders()
+            for appt in hour_reminders:
+                await bot.send_message(
+                    appt.user_id,
+                    f"⏰ Напоминание!\n\n"
+                    f"Через 1 час у вас прием.\n"
+                    f"🏥 {appt.place}\n"
+                    f"📍 {appt.city}\n"
+                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+                    f"⏰ {appt.time_slot}"
+                )
+                await mark_hour_reminded(appt.order_id)
+
+        except Exception as e:
+            print(f"Reminder worker error: {e}")
+
+        await asyncio.sleep(30)
 
 # --- Жесткая привязка к Московскому времени (UTC+3) ---
 MSK_TZ = timezone(timedelta(hours=3))
@@ -250,6 +297,12 @@ async def process_phone(message: Message, state: FSMContext):
 
     # Сохраняем проверенный номер в память
     await state.update_data(user_phone=phone)
+
+    # Сохранение телефона в БД
+    await create_or_update_user(
+        user_id=message.from_user.id,
+        phone=phone
+    )
 
     # Очищаем состояние
     await state.clear()
@@ -499,6 +552,17 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
 
+    # Сохранение записи в Бдж
+    await create_appointment(
+        user_id=callback.from_user.id,
+        city=data["city"],
+        place=data["clinic"],
+        year=data["b_year"],
+        month=data["b_month"],
+        day=data["b_day"],
+        time_slot=data["time"],
+    )
+
     await state.clear()
 
     await callback.message.edit_text(
@@ -567,8 +631,28 @@ async def return_to_main(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "menu_my_records")
 async def process_my_records(callback: CallbackQuery):
     await callback.answer()
+
+    appointments = await get_user_appointments(callback.from_user.id)
+
+    if not appointments:
+        await callback.message.edit_text(
+            "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
+            reply_markup=get_back_to_main_kb()
+        )
+        return
+
+    text = "📋 Ваши записи:\n\n"
+    for appt in appointments:
+        text += (
+            f"🆔 Запись №{appt.order_id}\n"
+            f"📍 {appt.city}\n"
+            f"🏥 {appt.place}\n"
+            f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+            f"⏰ {appt.time_slot}\n\n"
+        )
+
     await callback.message.edit_text(
-        "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
+        text,
         reply_markup=get_back_to_main_kb()
     )
 
@@ -581,6 +665,12 @@ async def process_support(callback: CallbackQuery):
         reply_markup=get_back_to_main_kb()
     )
 
+# Инициализация Бд
+async def on_startup():
+    await init_db()
+    asyncio.create_task(reminder_worker())
+
+dp.startup.register(on_startup)
 
 async def main():
     await dp.start_polling(bot)
