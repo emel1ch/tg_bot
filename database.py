@@ -91,6 +91,25 @@ async def create_or_update_user(user_id: int, phone: str | None = None, is_root:
         await session.commit()
 
 
+async def get_user_by_id(user_id: int):
+    async with async_session() as session:
+        return await session.get(User, user_id)
+
+async def delete_user(user_id: int):
+    async with async_session() as session:
+        stmt = select(Appointment).where(Appointment.user_id == user_id)
+        result = await session.execute(stmt)
+        appointments = result.scalars().all()
+        for appt in appointments:
+            await session.delete(appt)
+        
+        user = await session.get(User, user_id)
+        if user:
+            await session.delete(user)
+        
+        await session.commit()
+
+
 def parse_slot_start(slot_text: str) -> dt_time:
     # "08:00 - 10:00" -> 08:00
     start_str = slot_text.split("-")[0].strip()

@@ -4,12 +4,11 @@ import asyncio
 import calendar
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, StateFilter
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.filters import StateFilter
 from config import TOKEN, GROUP_ID
 
 from database import (
@@ -21,6 +20,8 @@ from database import (
     get_due_hour_reminders,
     mark_day_reminded,
     mark_hour_reminded,
+    get_user_by_id,
+    delete_user,
 )
 
 bot = Bot(token=TOKEN)
@@ -249,6 +250,29 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(UserState.waiting_for_consent)
     await message.answer(welcome_text, reply_markup=consent_kb)
 
+@dp.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    await state.clear()
+    user = await get_user_by_id(message.from_user.id)
+    if user and user.phone:
+        await message.answer(
+            "Вы в главном меню.\nВыберите нужный раздел:",
+            reply_markup=get_main_menu_kb()
+        )
+    else:
+        await message.answer("Пожалуйста, сначала зарегистрируйтесь через команду /start")
+
+@dp.message(Command("reset"))
+async def cmd_reset(message: Message, state: FSMContext):
+    await state.clear()
+    await delete_user(message.from_user.id)
+    await message.answer(
+        "🧹 Ваш профиль был полностью удален из базы данных (включая записи).\n\n"
+        "Теперь вы можете проверить сценарий первого запуска.\n"
+        "Нажмите /start для новой регистрации.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
 
 @dp.message(UserState.waiting_for_consent)
 async def block_unconsented_user(message: Message):
@@ -275,25 +299,27 @@ async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(UserState.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
-    # Если юзер нажал кнопку - Телеграм сам гарантирует, что это валидный телефон
     if message.contact:
-        phone = message.contact.phone_number
+        raw_phone = message.contact.phone_number
+        if not str(raw_phone).startswith('+'):
+            raw_phone = '+' + str(raw_phone)
     else:
-        # Если юзер ввел номер руками:
-        # 1. Убираем все пробелы, скобки и тире, чтобы остался только чистый номер
-        raw_phone = re.sub(r'[\s\-\(\)]', '', message.text)
-        
-        # 2. Проверяем, что номер состоит от 10 до 15 цифр (и может начинаться с плюса)
-        if not re.match(r'^\+?\d{10,15}$', raw_phone):
-            await message.answer(
-                "❌ Это не похоже на номер телефона.\n\n"
-                "Пожалуйста, введите корректный номер (например, +79991234567) "
-                "или воспользуйтесь кнопкой ниже 👇",
-                reply_markup=phone_kb
-            )
-            return  # Прерываем выполнение функции, бот останется ждать правильный номер
-        
-        phone = raw_phone
+        raw_phone = message.text
+
+    # Очищаем от лишних символов
+    clean_phone = re.sub(r'[\s\-\(\)]', '', raw_phone)
+    if not clean_phone.startswith('+'):
+        clean_phone = '+' + clean_phone
+    
+    # Жесткая валидация: формат РФ (+7 и ровно 10 цифр)
+    if not re.match(r'^\+7\d{10}$', clean_phone):
+        await message.answer(
+            "Пожалуйста, введите корректный номер телефона (например, +79991234567) или нажмите на кнопку ниже",
+            reply_markup=phone_kb
+        )
+        return
+
+    phone = clean_phone
 
     # Сохраняем проверенный номер в память
     await state.update_data(user_phone=phone)
@@ -421,7 +447,7 @@ async def get_progress_text(state: FSMContext):
         text += f"📅 {data['date']}\n"
 
     if data.get("time"):
-        text += f"⏰ {data['time']}:00\n"
+        text += f"⏰ {data['time']}\n"
 
     if text:
         text += "\n"
@@ -513,6 +539,8 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
 async def back_to_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
+    # Сбрасываем выбранное время
+    await state.update_data(time=None)
     data = await state.get_data()
     
     # Достаем сохраненные цифры даты
@@ -585,6 +613,8 @@ async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
+    await state.update_data(clinic=None, date=None, time=None)
+
     await state.set_state(BookingState.choosing_clinic)
 
     progress = await get_progress_text(state)
@@ -597,6 +627,8 @@ async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(BookingState.choosing_time, F.data == "back_to_date")
 async def back_to_date(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+
+    await state.update_data(date=None, time=None)
 
     now = datetime.now(MSK_TZ)
 
