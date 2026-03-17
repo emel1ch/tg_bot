@@ -23,3 +23,17 @@ button {
 }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 h1, h2 { margin: 8px 0; }
+
+/*Функция которая создает типа пролет главной страницы заглавной */
+@keyframes flyUp {
+  0%   { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-120vh); opacity: 0; } /* ровный линейный ход вверх */
+}
+
+/* класс, который применяет анимацию */
+.fly-up {
+  animation-name: flyUp;
+  animation-timing-function: linear;              /* <- ровная скорость */
+  animation-fill-mode: forwards;
+  animation-duration: var(--fly-dur, 700ms);      /* длительность можно задавать через --fly-dur */
+}

@@ -12,7 +12,7 @@ export default function Story({ onBack }) {
   return (
     <div>
       <button onClick={onBack}>Назад</button>
-      <h2>Соци-история</h2>
+      <h2>Соц-история</h2>
       <Slider slides={slides} />
     </div>
   )

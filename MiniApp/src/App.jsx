@@ -1,27 +1,46 @@
 // webapp/src/App.jsx
 import React, { useState } from 'react'
+import Welcome from './components/Welcome'
 import Home from './pages/Home'
-import VideoPlayer from './pages/VideoPlayer'
+import Adaptation from './pages/Adaptation'
+import Recommendations from './pages/Recommendations'
 import Story from './pages/Story'
 import PayPage from './pages/PayPage'
-import GameLink from './pages/GameLink'
 
 export default function App() {
-  const [route, setRoute] = useState('home')
-  const [videoId, setVideoId] = useState('dQw4w9WgXcQ') // demo
+  const [route, setRoute] = useState('welcome')
 
-  const navigate = (to, params) => {
-    if (to === 'video' && params?.videoId) setVideoId(params.videoId)
-    setRoute(to)
+  const navigate = (to) => setRoute(to)
+
+  if (route === 'welcome') {
+    return (
+      <Welcome 
+        onFinish={() => setRoute('home')} 
+        duration={4000}
+        flyDuration={2000}
+      />
+    )
   }
 
   return (
-    <div className="container">
+    <div className="max-w-md mx-auto p-4 flex flex-col items-center min-h-screen bg-white">
       {route === 'home' && <Home onNavigate={navigate} />}
-      {route === 'video' && <VideoPlayer videoId={videoId} onBack={() => setRoute('home')} />}
-      {route === 'story' && <Story onBack={() => setRoute('home')} />}
-      {route === 'dentist-paid' && <PayPage onBack={() => setRoute('home')} />}
-      {route === 'game' && <GameLink onBack={() => setRoute('home')} />}
+      
+      {route === 'adaptation' && (
+        <Adaptation onNavigate={navigate} onBack={() => setRoute('home')} />
+      )}
+
+      {route === 'dentist-paid' && (
+        <PayPage onBack={() => setRoute('home')} />
+      )}
+
+      {route === 'story' && (
+        <Story onBack={() => setRoute('adaptation')} />
+      )}
+
+      {route === 'info' && (
+        <Recommendations onBack={() => setRoute('adaptation')} />
+      )}
     </div>
   )
-} 
+}
