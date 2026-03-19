@@ -1,21 +1,78 @@
+import re
+import os
 import asyncio
 import calendar
+from datetime import datetime, timezone, timedelta
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from config import TOKEN, GROUP_ID
 from aiogram.filters import StateFilter
 from config import TOKEN
 
+from database import (
+    init_db,
+    create_or_update_user,
+    create_appointment,
+    get_user_appointments,
+    get_due_day_reminders,
+    get_due_hour_reminders,
+    mark_day_reminded,
+    mark_hour_reminded,
+    get_user_by_id,
+    delete_user,
+)
+
+bot = Bot(token=TOKEN)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
+# Уведомление для пользователя
+async def reminder_worker():
+    while True:
+        try:
+            day_reminders = await get_due_day_reminders()
+            for appt in day_reminders:
+                await bot.send_message(
+                    appt.user_id,
+                    f"🔔 Напоминание!\n\n"
+                    f"У вас завтра запись к врачу.\n"
+                    f"🏥 {appt.place}\n"
+                    f"📍 {appt.city}\n"
+                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+                    f"⏰ {appt.time_slot}"
+                )
+                await mark_day_reminded(appt.order_id)
+
+            hour_reminders = await get_due_hour_reminders()
+            for appt in hour_reminders:
+                await bot.send_message(
+                    appt.user_id,
+                    f"⏰ Напоминание!\n\n"
+                    f"Через 1 час у вас прием.\n"
+                    f"🏥 {appt.place}\n"
+                    f"📍 {appt.city}\n"
+                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+                    f"⏰ {appt.time_slot}"
+                )
+                await mark_hour_reminded(appt.order_id)
+
+        except Exception as e:
+            print(f"Reminder worker error: {e}")
+
+        await asyncio.sleep(30)
+
+# --- Жесткая привязка к Московскому времени (UTC+3) ---
+MSK_TZ = timezone(timedelta(hours=3))
+
 # --- Состояния ---
 class UserState(StatesGroup):
+    waiting_for_phone = State()
     waiting_for_consent = State()
 
 
@@ -34,6 +91,15 @@ consent_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✅ Я даю согласие", callback_data="accept_consent")]
 ])
 
+#клавиатура для телефона
+phone_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📱 Поделиться номером телефона", request_contact=True)]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
+
 
 MONTH_NAMES = [
     "Январь","Февраль","Март","Апрель","Май","Июнь",
@@ -41,17 +107,28 @@ MONTH_NAMES = [
 ]
 
 
+#исправление зависание календаря при клике на пустые клетки и дни недели
+@dp.callback_query(F.data == "ignore")
+async def ignore_calendar_clicks(callback: CallbackQuery):
+    # Просто гасим "часики", ничего не делая
+    await callback.answer()
+
+
 def calendar_kb(year, month):
+    now = datetime.now(MSK_TZ)
+
+    max_month = now.month + 2
+    max_year = now.year
+    if max_month > 12:
+        max_month -= 12
+        max_year += 1
 
     cal = calendar.monthcalendar(year, month)
     keyboard = []
 
     month_title = f"{MONTH_NAMES[month-1]} {year}"
 
-    keyboard.append([
-        InlineKeyboardButton(text=month_title, callback_data="ignore")
-    ])
-
+    keyboard.append([InlineKeyboardButton(text=month_title, callback_data="ignore")])
     keyboard.append([
         InlineKeyboardButton(text="Пн", callback_data="ignore"),
         InlineKeyboardButton(text="Вт", callback_data="ignore"),
@@ -68,18 +145,62 @@ def calendar_kb(year, month):
             if day == 0:
                 row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
             else:
-                row.append(
-                    InlineKeyboardButton(
-                        text=str(day),
-                        callback_data=f"day_{year}_{month}_{day}"
-                    )
-                )
+                # ПРОВЕРКА: блокируем прошедшие дни в текущем месяце
+                if year == now.year and month == now.month and day < now.day:
+                    row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
+                else:
+                    row.append(InlineKeyboardButton(text=str(day), callback_data=f"day_{year}_{month}_{day}"))
         keyboard.append(row)
+
+    nav_row = []
+
+    # ПРОВЕРКА: Кнопка "Назад" только если мы ушли вперед
+    if year > now.year or (year == now.year and month > now.month):
+        nav_row.append(InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"))
+    else:
+        nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+
+    # ПРОВЕРКА: Кнопка "Вперед" только если не уперлись в 3 месяца
+    if year < max_year or (year == max_year and month < max_month):
+        nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}"))
+    else:
+        nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+
+    keyboard.append(nav_row)
 
     keyboard.append([
         InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"),
         InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}")
     ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# СРАЗУ ПОСЛЕ КАЛЕНДАРЯ ДОБАВЛЯЕМ ФУНКЦИЮ ВРЕМЕНИ:
+def get_times_kb(year, month, day):
+    now = datetime.now(MSK_TZ)
+    is_today = (year == now.year and month == now.month and day == now.day)
+    current_hour = now.hour
+
+    time_slots = [
+        ("08:00 - 10:00", 8, "time_8"),
+        ("10:00 - 12:00", 10, "time_10"),
+        ("12:00 - 14:00", 12, "time_12"),
+        ("14:00 - 16:00", 14, "time_14"),
+        ("16:00 - 18:00", 16, "time_16"),
+        ("18:00 - 20:00", 18, "time_18")
+    ]
+
+    keyboard = []
+    for text, start_hour, cb_data in time_slots:
+        # ПРОВЕРКА: убираем часы, которые уже прошли сегодня
+        if is_today and start_hour <= current_hour:
+            continue
+        keyboard.append([InlineKeyboardButton(text=text, callback_data=cb_data)])
+
+    # Если на сегодня времени не осталось
+    if not keyboard:
+        keyboard.append([InlineKeyboardButton(text="Нет доступного времени 😔", callback_data="ignore")])
 
     keyboard.append([
         InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
@@ -92,8 +213,7 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
                               url="https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k")],
-        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://ya.ru"))],
-        # Замени на HTTPS ссылку твоего веб-сервиса
+        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://green-olives-pick.loca.lt"))],
         [InlineKeyboardButton(text="📅 Запись к врачу", callback_data="menu_book_appointment")],
         [InlineKeyboardButton(text="📋 Мои записи", callback_data="menu_my_records")],
         [InlineKeyboardButton(text="💬 Написать нам", callback_data="menu_support")]
@@ -118,10 +238,11 @@ def clinics_kb():
         ]
     ])
 
-# --- Обработчики старта и согласия ---
+# --- Обработчики старта, согласия и телефона ---
+
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    await state.clear()  # Сбрасываем любые старые состояния при перезапуске
+    await state.clear()  # Сбрасываем старые состояния
 
     welcome_text = (
         "Привет! Я цифровой помощник «Иду к врачу».\n\n"
@@ -129,34 +250,105 @@ async def cmd_start(message: Message, state: FSMContext):
         "Для продолжения работы мне необходимо ваше согласие на обработку персональных данных. "
         "Пожалуйста, ознакомьтесь с документом по ссылке ниже и подтвердите согласие."
     )
+    # Шаг 1: Ждем согласия
     await state.set_state(UserState.waiting_for_consent)
     await message.answer(welcome_text, reply_markup=consent_kb)
+
+@dp.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    await state.clear()
+    user = await get_user_by_id(message.from_user.id)
+    if user and user.phone:
+        await message.answer(
+            "Вы в главном меню.\nВыберите нужный раздел:",
+            reply_markup=get_main_menu_kb()
+        )
+    else:
+        await message.answer("Пожалуйста, сначала зарегистрируйтесь через команду /start")
+
+@dp.message(Command("reset"))
+async def cmd_reset(message: Message, state: FSMContext):
+    await state.clear()
+    await delete_user(message.from_user.id)
+    await message.answer(
+        "🧹 Ваш профиль был полностью удален из базы данных (включая записи).\n\n"
+        "Теперь вы можете проверить сценарий первого запуска.\n"
+        "Нажмите /start для новой регистрации.",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
 
 @dp.message(UserState.waiting_for_consent)
 async def block_unconsented_user(message: Message):
+    # Если юзер пишет текст, пока мы ждем согласие
     await message.answer(
-        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота.")
+        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота."
+    )
 
 
-@dp.callback_query(F.data == "accept_consent") # Убрали UserState.waiting_for_consent
+@dp.callback_query(F.data == "accept_consent")
 async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
-    # Очищаем состояние, если оно было
+    await callback.answer("Согласие получено!", show_alert=False)
+    await callback.message.delete()
+
+    # Шаг 2: Переводим в состояние ожидания телефона
+    await state.set_state(UserState.waiting_for_phone)
+
+    await callback.message.answer(
+        "Спасибо! Теперь, пожалуйста, поделитесь вашим номером телефона.\n"
+        "Вы можете нажать кнопку ниже или просто отправить номер сообщением.",
+        reply_markup=phone_kb
+    )
+
+
+@dp.message(UserState.waiting_for_phone)
+async def process_phone(message: Message, state: FSMContext):
+    if message.contact:
+        raw_phone = message.contact.phone_number
+        if not str(raw_phone).startswith('+'):
+            raw_phone = '+' + str(raw_phone)
+    else:
+        raw_phone = message.text
+
+    # Очищаем от лишних символов
+    clean_phone = re.sub(r'[\s\-\(\)]', '', raw_phone)
+    if not clean_phone.startswith('+'):
+        clean_phone = '+' + clean_phone
+
+    # Жесткая валидация: формат РФ (+7 и ровно 10 цифр)
+    if not re.match(r'^\+7\d{10}$', clean_phone):
+        await message.answer(
+            "Пожалуйста, введите корректный номер телефона (например, +79991234567) или нажмите на кнопку ниже",
+            reply_markup=phone_kb
+        )
+        return
+
+    phone = clean_phone
+
+    # Сохраняем проверенный номер в память
+    await state.update_data(user_phone=phone)
+
+    # Сохранение телефона в БД
+    await create_or_update_user(
+        user_id=message.from_user.id,
+        phone=phone
+    )
+
+    # Очищаем состояние
     await state.clear()
 
-    # Убираем "часики" загрузки на кнопке
-    await callback.answer("Согласие получено!", show_alert=False)
+    # Удаляем кнопку телефона с экрана
+    await message.answer("✅ Номер успешно получен!", reply_markup=ReplyKeyboardRemove())
 
-    # Меняем сообщение на главное меню
-    await callback.message.edit_text(
-        "Спасибо! Теперь вам доступен весь интерфейс.\n\n"
+    # Выдаем главное меню один раз
+    await message.answer(
+        "Теперь вам доступен весь интерфейс.\n\n"
         "Выберите нужный раздел:",
         reply_markup=get_main_menu_kb()
     )
 
 
 # --- FSM: Сценарий "Запись к врачу" ---
-
 @dp.callback_query(F.data == "menu_book_appointment")
 async def start_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -165,7 +357,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
 
     def cities_kb() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Москва", callback_data="city_moscow")],
+            [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
                 InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
@@ -182,7 +374,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
 async def choose_city(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     city_map = {
-        "city_moscow": "Москва"
+        "city_moscow": "г.Москва"
     }
 
     await state.update_data(city=city_map[callback.data])
@@ -207,7 +399,7 @@ async def choose_clinic(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(clinic=clinic_map[callback.data])
 
-    now = datetime.now()
+    now = datetime.now(MSK_TZ)
 
     await state.set_state(BookingState.choosing_date)
 
@@ -225,29 +417,17 @@ async def choose_day(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     _, year, month, day = callback.data.split("_")
+    year, month, day = int(year), int(month), int(day)
 
     month_name = [
         "января", "февраля", "марта", "апреля", "мая", "июня",
         "июля", "августа", "сентября", "октября", "ноября", "декабря"
     ]
 
-    date_text = f"{day} {month_name[int(month) - 1]} {year}"
+    date_text = f"{day} {month_name[month - 1]} {year}"
 
-    await state.update_data(date=date_text)
-
-    def times_kb():
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_8")],
-            [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_10")],
-            [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_12")],
-            [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_14")],
-            [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_16")],
-            [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_18")],
-            [
-                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_date"),
-                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-            ]
-        ])
+    # Сохраняем дату текстом и цифрами (цифры нужны для умного времени)
+    await state.update_data(date=date_text, b_year=year, b_month=month, b_day=day)
 
     await state.set_state(BookingState.choosing_time)
 
@@ -255,7 +435,7 @@ async def choose_day(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         f"{progress}⏰ Выберите время:",
-        reply_markup=times_kb()
+        reply_markup=get_times_kb(year, month, day)
     )
 
 async def get_progress_text(state: FSMContext):
@@ -274,7 +454,7 @@ async def get_progress_text(state: FSMContext):
         text += f"📅 {data['date']}\n"
 
     if data.get("time"):
-        text += f"⏰ {data['time']}:00\n"
+        text += f"⏰ {data['time']}\n"
 
     if text:
         text += "\n"
@@ -324,7 +504,6 @@ async def prev_month(callback: CallbackQuery):
 async def choose_time(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    # Здесь мы забираем все ответы, которые пользователь давал на предыдущих шагах
     user_data = await state.get_data()
 
     city = user_data.get("city")
@@ -368,6 +547,15 @@ async def back_to_time(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
+    # Сбрасываем выбранное время
+    await state.update_data(time=None)
+    data = await state.get_data()
+
+    # Достаем сохраненные цифры даты
+    year = data.get("b_year")
+    month = data.get("b_month")
+    day = data.get("b_day")
+
     progress = await get_progress_text(state)
 
     def times_kb():
@@ -388,7 +576,7 @@ async def back_to_time(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         f"{progress}⏰ Выберите время:",
-        reply_markup=times_kb()
+        reply_markup=get_times_kb(year, month, day)
     )
 
 
@@ -398,7 +586,7 @@ async def back_to_city(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     # воссоздаём клавиатуру города (как в start_booking)
     cities_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Москва", callback_data="city_moscow")],
+        [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
         [
             InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
             InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
@@ -413,6 +601,17 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     data = await state.get_data()
+
+    # Сохранение записи в Бдж
+    await create_appointment(
+        user_id=callback.from_user.id,
+        city=data["city"],
+        place=data["clinic"],
+        year=data["b_year"],
+        month=data["b_month"],
+        day=data["b_day"],
+        time_slot=data["time"],
+    )
 
     await state.clear()
 
@@ -436,6 +635,8 @@ async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
+    await state.update_data(clinic=None, date=None, time=None)
+
     await state.set_state(BookingState.choosing_clinic)
 
     progress = await get_progress_text(state)
@@ -449,7 +650,9 @@ async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
 async def back_to_date(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    now = datetime.now()
+    await state.update_data(date=None, time=None)
+
+    now = datetime.now(MSK_TZ)
 
     await state.set_state(BookingState.choosing_date)
 
@@ -459,6 +662,12 @@ async def back_to_date(callback: CallbackQuery, state: FSMContext):
         f"{progress}📅 Выберите дату:",
         reply_markup=calendar_kb(now.year, now.month)
     )
+
+
+# --- Обработчик нажатий на заголовки календаря (игнорируем) ---
+@dp.callback_query(F.data == "ignore")
+async def ignore_callback(callback: CallbackQuery):
+    await callback.answer()
 
 
 # --- Обработчик возврата в главное меню ---
@@ -476,8 +685,28 @@ async def return_to_main(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "menu_my_records")
 async def process_my_records(callback: CallbackQuery):
     await callback.answer()
+
+    appointments = await get_user_appointments(callback.from_user.id)
+
+    if not appointments:
+        await callback.message.edit_text(
+            "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
+            reply_markup=get_back_to_main_kb()
+        )
+        return
+
+    text = "📋 Ваши записи:\n\n"
+    for appt in appointments:
+        text += (
+            f"🆔 Запись №{appt.order_id}\n"
+            f"📍 {appt.city}\n"
+            f"🏥 {appt.place}\n"
+            f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
+            f"⏰ {appt.time_slot}\n\n"
+        )
+
     await callback.message.edit_text(
-        "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
+        text,
         reply_markup=get_back_to_main_kb()
     )
 
@@ -490,8 +719,15 @@ async def process_support(callback: CallbackQuery):
         reply_markup=get_back_to_main_kb()
     )
 
+# Инициализация Бд
+async def on_startup():
+    await init_db()
+    asyncio.create_task(reminder_worker())
+
+dp.startup.register(on_startup)
 
 async def main():
+    logger.info("Бот запускается...")
     await dp.start_polling(bot)
 
 
