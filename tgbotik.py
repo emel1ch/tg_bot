@@ -28,7 +28,6 @@ from database import (
 )
 
 bot = Bot(token=TOKEN)
-bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
@@ -74,6 +73,9 @@ MSK_TZ = timezone(timedelta(hours=3))
 class UserState(StatesGroup):
     waiting_for_phone = State()
     waiting_for_consent = State()
+
+class SupportState(StatesGroup):
+    waiting_for_question = State()
 
 
 # Состояния для пошаговой записи к врачу (FSM)
@@ -167,13 +169,13 @@ def calendar_kb(year, month):
         nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
 
     keyboard.append(nav_row)
-
     keyboard.append([
-        InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"),
-        InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 
 # СРАЗУ ПОСЛЕ КАЛЕНДАРЯ ДОБАВЛЯЕМ ФУНКЦИЮ ВРЕМЕНИ:
@@ -712,22 +714,58 @@ async def process_my_records(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data == "menu_support")
-async def process_support(callback: CallbackQuery):
+async def process_support(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    # Переводим бота в режим ожидания вопроса
+    await state.set_state(SupportState.waiting_for_question)
     await callback.message.edit_text(
-        "💬 Чат со специалистом временно недоступен. Пожалуйста, попробуйте позже.",
+        "💬 Напишите ваш вопрос одним сообщением, и я передам его специалистам поддержки:",
         reply_markup=get_back_to_main_kb()
     )
 
+
+# Ловим текст вопроса и отправляем в группу
+@dp.message(SupportState.waiting_for_question)
+async def forward_to_support(message: Message, state: FSMContext):
+    # Данные о пользователе (чтобы знать, кому отвечать)
+    user_info = f"Пользователь: {message.from_user.full_name}\nID: {message.from_user.id}"
+    if message.from_user.username:
+        user_info += f"\nUsername: @{message.from_user.username}"
+
+    # Отправляем сообщение в вашу группу
+    try:
+        await bot.send_message(
+            chat_id=GROUP_ID,
+            text=f"🚨 <b>Новое обращение в поддержку!</b>\n\n{user_info}\n\n<b>Вопрос:</b>\n{message.text}",
+            parse_mode="HTML"
+        )
+
+        # Уведомляем пользователя, что всё ок
+        await message.answer(
+            "✅ Ваше сообщение успешно отправлено! Специалисты скоро с вами свяжутся.",
+            reply_markup=get_main_menu_kb()
+        )
+    except Exception as e:
+        # Если бот не добавлен в группу или нет прав
+        await message.answer(
+            "❌ Произошла ошибка при отправке сообщения. Пожалуйста, попробуйте позже.",
+            reply_markup=get_main_menu_kb()
+        )
+        print(f"Ошибка отправки в группу: {e}")
+
+    # Очищаем состояние
+    await state.clear()
+
+
 # Инициализация Бд
-async def on_startup():
+async def on_startup(bot: Bot, **kwargs):
     await init_db()
     asyncio.create_task(reminder_worker())
 
 dp.startup.register(on_startup)
 
 async def main():
-    logger.info("Бот запускается...")
+    print("Бот запускается...")
     await dp.start_polling(bot)
 
 
