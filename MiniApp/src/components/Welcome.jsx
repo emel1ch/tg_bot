@@ -1,49 +1,35 @@
-// src/components/Welcome.jsx
 import React, { useEffect, useRef, useState } from 'react'
 import welcomeImg from '../assets/welcome.png'
 
 export default function Welcome({
-  // callback от App: вызывается когда welcome закончился
   onFinish = () => {},
-
-  // текстовые значения (по умолчанию)
   titleText = 'Добро пожаловать!',
   subtitleText = 'Иду к врачу',
-
-  // где показываем (для каждого текста отдельно): 'top' | 'bottom'
   titlePosition = 'top',
   subtitlePosition = 'bottom',
-
-  // тайминги
-  duration = 2600,    // общее время на экране (ms)
-  flyDuration = 700,  // длительность анимации пролёта (ms)
-
-  // стили/классы (Tailwind / inline)
-  imgClass = 'w-full h-[60vh] object-contain',
+  duration = 2600,
+  flyDuration = 700,
+  imgClass = 'w-full max-w-md h-[55vh] object-contain',
   imgStyle = {},
-  titleClass = 'text-2xl font-semibold mb-3',
-  subtitleClass = 'text-sm text-gray-600',
-  containerClass = 'h-screen overflow-hidden flex items-center justify-center bg-white',
-  containerStyle = {}
+  titleClass = 'text-2xl sm:text-3xl font-semibold tracking-tight text-[#1E7F7A] mb-3',
+  subtitleClass = 'text-sm text-[#4B6F6D]',
+  containerClass = 'min-h-screen overflow-hidden flex items-center justify-center bg-[#FFFEFA] px-4',
+  containerStyle = {},
 }) {
   const [fly, setFly] = useState(false)
   const finishedRef = useRef(false)
 
   useEffect(() => {
-    // когда запускать анимацию пролёта
     const flyDelay = Math.max(0, duration - flyDuration)
 
     const tFly = setTimeout(() => setFly(true), flyDelay)
 
     const tEnd = setTimeout(() => {
-      // вызываем onFinish ровно 1 раз
       if (!finishedRef.current) {
         finishedRef.current = true
         try {
           onFinish()
         } catch (e) {
-          // safety: не ломаем UI, если onFinish бросает
-          
           console.error('Welcome: onFinish error', e)
         }
       }
@@ -55,31 +41,32 @@ export default function Welcome({
     }
   }, [duration, flyDuration, onFinish])
 
-  // передаём длительность анимации в CSS-переменную --fly-dur:
   const animationVar = { '--fly-dur': `${flyDuration}ms` }
 
   return (
-    <div className={containerClass} style={containerStyle}>
+    <div className={`${containerClass} relative isolate`} style={containerStyle}>
+      <div className="pointer-events-none absolute -left-10 -top-10 z-0 h-28 w-28 rounded-full bg-[#73D8D0] opacity-70 blur-[1px]" />
+      <div className="pointer-events-none absolute -bottom-16 -right-16 z-0 h-56 w-56 rounded-full bg-[#5ECFC6] opacity-55 blur-[1px]" />
+
       <div
-        className={`w-full max-w-3xl text-center px-6 ${fly ? 'fly-up' : ''}`}
+        className={`relative z-10 w-full max-w-3xl text-center ${fly ? 'fly-up' : ''}`}
         style={animationVar}
       >
-        {/* Заголовок ABOVE image */}
         {titlePosition === 'top' && <h1 className={titleClass}>{titleText}</h1>}
 
-        {/* Подзаголовок ABOVE image (если нужен) */}
-        {subtitlePosition === 'top' && <div className={subtitleClass}>{subtitleText}</div>}
+        {subtitlePosition === 'top' && (
+          <div className={subtitleClass}>{subtitleText}</div>
+        )}
 
-        {/* Картинка */}
-        <div className="flex justify-center my-4">
+        <div className="my-5 flex justify-center">
           <img src={welcomeImg} alt="welcome" className={imgClass} style={imgStyle} />
         </div>
 
-        {/* Заголовок BELOW image */}
         {titlePosition === 'bottom' && <h1 className={titleClass}>{titleText}</h1>}
 
-        {/* Подзаголовок BELOW image */}
-        {subtitlePosition === 'bottom' && <div className={subtitleClass}>{subtitleText}</div>}
+        {subtitlePosition === 'bottom' && (
+          <div className={subtitleClass}>{subtitleText}</div>
+        )}
       </div>
     </div>
   )
