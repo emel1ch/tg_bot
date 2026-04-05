@@ -1,0 +1,3224 @@
+Index: tgbotik.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import asyncio\r\nimport calendar\r\nimport logging\r\nfrom datetime import datetime\r\nfrom aiogram import Bot, Dispatcher, F\r\nfrom aiogram.filters import CommandStart\r\nfrom aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery\r\nfrom aiogram.types.web_app_info import WebAppInfo\r\nfrom aiogram.fsm.context import FSMContext\r\nfrom aiogram.fsm.state import StatesGroup, State\r\nfrom aiogram.filters import StateFilter\r\n\r\n# Настройка логирования\r\nlogging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')\r\nlogger = logging.getLogger(__name__)\r\n\r\nbot = Bot(token=\"7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU\")\r\ndp = Dispatcher()\r\n\r\n\r\n# --- Состояния ---\r\nclass UserState(StatesGroup):\r\n    waiting_for_consent = State()\r\n\r\n\r\n# Состояния для пошаговой записи к врачу (FSM)\r\nclass BookingState(StatesGroup):\r\n    choosing_city = State()\r\n    choosing_clinic = State()\r\n    choosing_date = State()\r\n    choosing_time = State()\r\n\r\n\r\n# --- Клавиатуры ---\r\nconsent_kb = InlineKeyboardMarkup(inline_keyboard=[\r\n    [InlineKeyboardButton(text=\"\uD83D\uDCC4 Прочитать согласие\",\r\n                          url=\"https://docs.google.com/document/d/14bjKlifFNWM5reJbzbOlqYEUe9m5sm0Db5n-mgk_Wmk/edit?usp=sharing\")],\r\n    [InlineKeyboardButton(text=\"✅ Я даю согласие\", callback_data=\"accept_consent\")]\r\n])\r\n\r\n\r\nMONTH_NAMES = [\r\n    \"Январь\",\"Февраль\",\"Март\",\"Апрель\",\"Май\",\"Июнь\",\r\n    \"Июль\",\"Август\",\"Сентябрь\",\"Октябрь\",\"Ноябрь\",\"Декабрь\"\r\n]\r\n\r\n\r\ndef calendar_kb(year, month):\r\n\r\n    cal = calendar.monthcalendar(year, month)\r\n    keyboard = []\r\n\r\n    month_title = f\"{MONTH_NAMES[month-1]} {year}\"\r\n\r\n    keyboard.append([\r\n        InlineKeyboardButton(text=month_title, callback_data=\"ignore\")\r\n    ])\r\n\r\n    keyboard.append([\r\n        InlineKeyboardButton(text=\"Пн\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Вт\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Ср\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Чт\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Пт\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Сб\", callback_data=\"ignore\"),\r\n        InlineKeyboardButton(text=\"Вс\", callback_data=\"ignore\")\r\n    ])\r\n\r\n    for week in cal:\r\n        row = []\r\n        for day in week:\r\n            if day == 0:\r\n                row.append(InlineKeyboardButton(text=\" \", callback_data=\"ignore\"))\r\n            else:\r\n                row.append(\r\n                    InlineKeyboardButton(\r\n                        text=str(day),\r\n                        callback_data=f\"day_{year}_{month}_{day}\"\r\n                    )\r\n                )\r\n        keyboard.append(row)\r\n\r\n    keyboard.append([\r\n        InlineKeyboardButton(text=\"◀\uFE0F\", callback_data=f\"prev_{year}_{month}\"),\r\n        InlineKeyboardButton(text=\"▶\uFE0F\", callback_data=f\"next_{year}_{month}\")\r\n    ])\r\n\r\n    keyboard.append([\r\n        InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"back_to_clinic\"),\r\n        InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n    ])\r\n\r\n    return InlineKeyboardMarkup(inline_keyboard=keyboard)\r\n\r\ndef get_main_menu_kb() -> InlineKeyboardMarkup:\r\n    return InlineKeyboardMarkup(inline_keyboard=[\r\n        [InlineKeyboardButton(text=\"Сервис 'Иду к врачу'\",\r\n                              url=\"https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k\")],\r\n        [InlineKeyboardButton(text=\"\uD83D\uDCDA Подготовка (Материалы)\", web_app=WebAppInfo(url=\"https://green-olives-pick.loca.lt\"))],\r\n        [InlineKeyboardButton(text=\"\uD83D\uDCC5 Запись к врачу\", callback_data=\"menu_book_appointment\")],\r\n        [InlineKeyboardButton(text=\"\uD83D\uDCCB Мои записи\", callback_data=\"menu_my_records\")],\r\n        [InlineKeyboardButton(text=\"\uD83D\uDCAC Написать нам\", callback_data=\"menu_support\")]\r\n    ])\r\n\r\n\r\n# Функция для возврата в меню (используется на разных этапах)\r\ndef get_back_to_main_kb() -> InlineKeyboardMarkup:\r\n    return InlineKeyboardMarkup(inline_keyboard=[\r\n        [InlineKeyboardButton(text=\"\uD83D\uDD19 Вернуться на главную\", callback_data=\"return_main\")]\r\n    ])\r\n\r\ndef clinics_kb():\r\n\r\n    return InlineKeyboardMarkup(inline_keyboard=[\r\n        [InlineKeyboardButton(text=\"Клиника №1 (ст. м. ВДНХ)\", callback_data=\"clinic_1\")],\r\n        [InlineKeyboardButton(text=\"Клиника №2 (ст. м. Лубянка)\", callback_data=\"clinic_2\")],\r\n        [InlineKeyboardButton(text=\"Клиника №3 (ст. м. Бауманская)\", callback_data=\"clinic_3\")],\r\n        [\r\n            InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"back_to_city\"),\r\n            InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n        ]\r\n    ])\r\n\r\n# --- Обработчики старта и согласия ---\r\n@dp.message(CommandStart())\r\nasync def cmd_start(message: Message, state: FSMContext):\r\n    await state.clear()  # Сбрасываем любые старые состояния при перезапуске\r\n\r\n    welcome_text = (\r\n        \"Привет! Я цифровой помощник «Иду к врачу».\\n\\n\"\r\n        \"Я помогаю ребёнку с РАС подготовиться к посещению врача и сделать его менее тревожным.\\n\\n\"\r\n        \"Для продолжения работы мне необходимо ваше согласие на обработку персональных данных. \"\r\n        \"Пожалуйста, ознакомьтесь с документом по ссылке ниже и подтвердите согласие.\"\r\n    )\r\n    await state.set_state(UserState.waiting_for_consent)\r\n    await message.answer(welcome_text, reply_markup=consent_kb)\r\n\r\n\r\n@dp.message(UserState.waiting_for_consent)\r\nasync def block_unconsented_user(message: Message):\r\n    await message.answer(\r\n        \"Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота.\")\r\n\r\n\r\n@dp.callback_query(F.data == \"accept_consent\") # Убрали UserState.waiting_for_consent\r\nasync def on_consent_accepted(callback: CallbackQuery, state: FSMContext):\r\n    # Очищаем состояние, если оно было\r\n    await state.clear()\r\n\r\n    # Убираем \"часики\" загрузки на кнопке\r\n    await callback.answer(\"Согласие получено!\", show_alert=False)\r\n\r\n    # Меняем сообщение на главное меню\r\n    await callback.message.edit_text(\r\n        \"Спасибо! Теперь вам доступен весь интерфейс.\\n\\n\"\r\n        \"Выберите нужный раздел:\",\r\n        reply_markup=get_main_menu_kb()\r\n    )\r\n\r\n\r\n# --- FSM: Сценарий \"Запись к врачу\" ---\r\n@dp.callback_query(F.data == \"menu_book_appointment\")\r\nasync def start_booking(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n    # обязательно выставляем состояние\r\n    await state.set_state(BookingState.choosing_city)\r\n\r\n    def cities_kb() -> InlineKeyboardMarkup:\r\n        return InlineKeyboardMarkup(inline_keyboard=[\r\n            [InlineKeyboardButton(text=\"Москва\", callback_data=\"city_moscow\")],\r\n            [\r\n                InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"return_main\"),\r\n                InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n            ]\r\n        ])\r\n\r\n    await callback.message.edit_text(\r\n        \"\uD83D\uDCCD Шаг 1: Выберите ваш город:\",\r\n        reply_markup=cities_kb()\r\n    )\r\n\r\n\r\n@dp.callback_query(BookingState.choosing_city, F.data.startswith(\"city_\"))\r\nasync def choose_city(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n    city_map = {\r\n        \"city_moscow\": \"Москва\"\r\n    }\r\n\r\n    await state.update_data(city=city_map[callback.data])\r\n\r\n\r\n    await state.set_state(BookingState.choosing_clinic)\r\n    progress = await get_progress_text(state)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}\uD83C\uDFE5 Выберите клинику:\",\r\n        reply_markup=clinics_kb()\r\n    )\r\n\r\n@dp.callback_query(BookingState.choosing_clinic, F.data.startswith(\"clinic_\"))\r\nasync def choose_clinic(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n    clinic_map = {\r\n        \"clinic_1\": \"Клиника №1 (ст. м. ВДНХ)\",\r\n        \"clinic_2\": \"Клиника №2 (ст. м. Лубянка)\",\r\n        \"clinic_3\": \"Клиника №3 (ст. м. Бауманская)\"\r\n    }\r\n\r\n    await state.update_data(clinic=clinic_map[callback.data])\r\n\r\n    now = datetime.now()\r\n\r\n    await state.set_state(BookingState.choosing_date)\r\n\r\n    progress = await get_progress_text(state)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}\uD83D\uDCC5 Выберите дату:\",\r\n        reply_markup=calendar_kb(now.year, now.month)\r\n    )\r\n\r\n\r\n@dp.callback_query(BookingState.choosing_date, F.data.startswith(\"day_\"))\r\nasync def choose_day(callback: CallbackQuery, state: FSMContext):\r\n\r\n    await callback.answer()\r\n\r\n    _, year, month, day = callback.data.split(\"_\")\r\n\r\n    month_name = [\r\n        \"января\", \"февраля\", \"марта\", \"апреля\", \"мая\", \"июня\",\r\n        \"июля\", \"августа\", \"сентября\", \"октября\", \"ноября\", \"декабря\"\r\n    ]\r\n\r\n    date_text = f\"{day} {month_name[int(month) - 1]} {year}\"\r\n\r\n    await state.update_data(date=date_text)\r\n\r\n    def times_kb():\r\n        return InlineKeyboardMarkup(inline_keyboard=[\r\n            [InlineKeyboardButton(text=\"08:00 - 10:00\", callback_data=\"time_8\")],\r\n            [InlineKeyboardButton(text=\"10:00 - 12:00\", callback_data=\"time_10\")],\r\n            [InlineKeyboardButton(text=\"12:00 - 14:00\", callback_data=\"time_12\")],\r\n            [InlineKeyboardButton(text=\"14:00 - 16:00\", callback_data=\"time_14\")],\r\n            [InlineKeyboardButton(text=\"16:00 - 18:00\", callback_data=\"time_16\")],\r\n            [InlineKeyboardButton(text=\"18:00 - 20:00\", callback_data=\"time_18\")],\r\n            [\r\n                InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"back_to_date\"),\r\n                InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n            ]\r\n        ])\r\n\r\n    await state.set_state(BookingState.choosing_time)\r\n\r\n    progress = await get_progress_text(state)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}⏰ Выберите время:\",\r\n        reply_markup=times_kb()\r\n    )\r\n\r\nasync def get_progress_text(state: FSMContext):\r\n\r\n    data = await state.get_data()\r\n\r\n    text = \"\"\r\n\r\n    if data.get(\"city\"):\r\n        text += f\"\uD83D\uDCCD {data['city']}\\n\"\r\n\r\n    if data.get(\"clinic\"):\r\n        text += f\"\uD83C\uDFE5 {data['clinic']}\\n\"\r\n\r\n    if data.get(\"date\"):\r\n        text += f\"\uD83D\uDCC5 {data['date']}\\n\"\r\n\r\n    if data.get(\"time\"):\r\n        text += f\"⏰ {data['time']}:00\\n\"\r\n\r\n    if text:\r\n        text += \"\\n\"\r\n\r\n    return text\r\n\r\n\r\n@dp.callback_query(F.data.startswith(\"next_\"))\r\nasync def next_month(callback: CallbackQuery):\r\n\r\n    await callback.answer()\r\n\r\n    _, year, month = callback.data.split(\"_\")\r\n\r\n    year = int(year)\r\n    month = int(month) + 1\r\n\r\n    if month > 12:\r\n        month = 1\r\n        year += 1\r\n\r\n    await callback.message.edit_reply_markup(\r\n        reply_markup=calendar_kb(year, month)\r\n    )\r\n\r\n\r\n@dp.callback_query(F.data.startswith(\"prev_\"))\r\nasync def prev_month(callback: CallbackQuery):\r\n\r\n    await callback.answer()\r\n\r\n    _, year, month = callback.data.split(\"_\")\r\n\r\n    year = int(year)\r\n    month = int(month) - 1\r\n\r\n    if month < 1:\r\n        month = 12\r\n        year -= 1\r\n\r\n    await callback.message.edit_reply_markup(\r\n        reply_markup=calendar_kb(year, month)\r\n    )\r\n\r\n\r\n@dp.callback_query(BookingState.choosing_time, F.data.startswith(\"time_\"))\r\nasync def choose_time(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n\r\n    user_data = await state.get_data()\r\n\r\n    city = user_data.get(\"city\")\r\n    clinic = user_data.get(\"clinic\")\r\n    date = user_data.get(\"date\")\r\n    time_map = {\r\n        \"time_8\": \"08:00 - 10:00\",\r\n        \"time_10\": \"10:00 - 12:00\",\r\n        \"time_12\": \"12:00 - 14:00\",\r\n        \"time_14\": \"14:00 - 16:00\",\r\n        \"time_16\": \"16:00 - 18:00\",\r\n        \"time_18\": \"18:00 - 20:00\"\r\n    }\r\n\r\n    time = time_map[callback.data]\r\n\r\n    await state.update_data(time=time)\r\n\r\n    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[\r\n        [InlineKeyboardButton(text=\"✅ Подтвердить\", callback_data=\"confirm_booking\")],\r\n        [InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"back_to_time\")],\r\n        [InlineKeyboardButton(text=\"❌ Отмена\", callback_data=\"return_main\")]\r\n    ])\r\n\r\n    await callback.message.edit_text(\r\n        f\"\"\"\r\nПроверьте данные записи:\r\n\r\n\uD83D\uDCCD Город: {city}\r\n\uD83C\uDFE5 Клиника: {clinic}\r\n\uD83D\uDCC5 Дата: {date}\r\n⏰ Время: {time}\r\n\r\nПодтвердить запись?\r\n\"\"\",\r\n        reply_markup=confirm_kb\r\n    )\r\n\r\n@dp.callback_query(F.data == \"back_to_time\")\r\nasync def back_to_time(callback: CallbackQuery, state: FSMContext):\r\n\r\n    await callback.answer()\r\n\r\n    progress = await get_progress_text(state)\r\n\r\n    def times_kb():\r\n        return InlineKeyboardMarkup(inline_keyboard=[\r\n            [InlineKeyboardButton(text=\"08:00 - 10:00\", callback_data=\"time_8\")],\r\n            [InlineKeyboardButton(text=\"10:00 - 12:00\", callback_data=\"time_10\")],\r\n            [InlineKeyboardButton(text=\"12:00 - 14:00\", callback_data=\"time_12\")],\r\n            [InlineKeyboardButton(text=\"14:00 - 16:00\", callback_data=\"time_14\")],\r\n            [InlineKeyboardButton(text=\"16:00 - 18:00\", callback_data=\"time_16\")],\r\n            [InlineKeyboardButton(text=\"18:00 - 20:00\", callback_data=\"time_18\")],\r\n            [\r\n                InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"back_to_date\"),\r\n                InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n            ]\r\n        ])\r\n\r\n    await state.set_state(BookingState.choosing_time)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}⏰ Выберите время:\",\r\n        reply_markup=times_kb()\r\n    )\r\n\r\n\r\n# --- Обработчики \"Назад\" (минимальные, чтобы не ломалось) ---\r\n@dp.callback_query(BookingState.choosing_clinic, F.data == \"back_to_city\")\r\nasync def back_to_city(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n    # воссоздаём клавиатуру города (как в start_booking)\r\n    cities_markup = InlineKeyboardMarkup(inline_keyboard=[\r\n        [InlineKeyboardButton(text=\"Москва\", callback_data=\"city_moscow\")],\r\n        [\r\n            InlineKeyboardButton(text=\"\uD83D\uDD19 Назад\", callback_data=\"return_main\"),\r\n            InlineKeyboardButton(text=\"\uD83C\uDFE0 Главное меню\", callback_data=\"return_main\")\r\n        ]\r\n    ])\r\n    await state.set_state(BookingState.choosing_city)\r\n    await callback.message.edit_text(\"\uD83D\uDCCD Шаг 1: Выберите ваш город:\", reply_markup=cities_markup)\r\n\r\n@dp.callback_query(F.data == \"confirm_booking\")\r\nasync def confirm_booking(callback: CallbackQuery, state: FSMContext):\r\n\r\n    await callback.answer()\r\n\r\n    data = await state.get_data()\r\n\r\n    await state.clear()\r\n\r\n    await callback.message.edit_text(\r\n        f\"\"\"\r\n✅ Заявка успешно создана!\r\n\r\n\uD83D\uDCCD {data['city']}\r\n\uD83C\uDFE5 {data['clinic']}\r\n\uD83D\uDCC5 {data['date']}\r\n⏰ {data['time']}\r\n\r\nАдминистратор клиники свяжется с вами для подтверждения записи.\r\n\"\"\",\r\n        reply_markup=get_back_to_main_kb()\r\n    )\r\n\r\n\r\n@dp.callback_query(BookingState.choosing_date, F.data == \"back_to_clinic\")\r\nasync def back_to_clinic(callback: CallbackQuery, state: FSMContext):\r\n\r\n    await callback.answer()\r\n\r\n    await state.set_state(BookingState.choosing_clinic)\r\n\r\n    progress = await get_progress_text(state)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}\uD83C\uDFE5 Выберите клинику:\",\r\n        reply_markup=clinics_kb()\r\n    )\r\n\r\n@dp.callback_query(BookingState.choosing_time, F.data == \"back_to_date\")\r\nasync def back_to_date(callback: CallbackQuery, state: FSMContext):\r\n    await callback.answer()\r\n\r\n    now = datetime.now()\r\n\r\n    await state.set_state(BookingState.choosing_date)\r\n\r\n    progress = await get_progress_text(state)\r\n\r\n    await callback.message.edit_text(\r\n        f\"{progress}\uD83D\uDCC5 Выберите дату:\",\r\n        reply_markup=calendar_kb(now.year, now.month)\r\n    )\r\n\r\n\r\n# --- Обработчик нажатий на заголовки календаря (игнорируем) ---\r\n@dp.callback_query(F.data == \"ignore\")\r\nasync def ignore_callback(callback: CallbackQuery):\r\n    await callback.answer()\r\n\r\n\r\n# --- Обработчик возврата в главное меню ---\r\n@dp.callback_query(F.data == \"return_main\")\r\nasync def return_to_main(callback: CallbackQuery, state: FSMContext):\r\n    await state.clear()  # На случай, если пользователь нажал отмену посередине FSM\r\n    await callback.answer()\r\n    await callback.message.edit_text(\r\n        \"Вы в главном меню.\\nВыберите нужный раздел:\",\r\n        reply_markup=get_main_menu_kb()\r\n    )\r\n\r\n\r\n# --- Заглушки для оставшихся кнопок ---\r\n@dp.callback_query(F.data == \"menu_my_records\")\r\nasync def process_my_records(callback: CallbackQuery):\r\n    await callback.answer()\r\n    await callback.message.edit_text(\r\n        \"\uD83D\uDCCB Ваши записи:\\n\\nУ вас пока нет активных записей.\",\r\n        reply_markup=get_back_to_main_kb()\r\n    )\r\n\r\n\r\n@dp.callback_query(F.data == \"menu_support\")\r\nasync def process_support(callback: CallbackQuery):\r\n    await callback.answer()\r\n    await callback.message.edit_text(\r\n        \"\uD83D\uDCAC Чат со специалистом временно недоступен. Пожалуйста, попробуйте позже.\",\r\n        reply_markup=get_back_to_main_kb()\r\n    )\r\n\r\n\r\nasync def main():\r\n    logger.info(\"Бот запускается...\")\r\n    await dp.start_polling(bot)\r\n\r\n\r\nif __name__ == '__main__':\r\n    try:\r\n        asyncio.run(main())\r\n    except KeyboardInterrupt:\r\n        print('Exit')\r\n    except Exception as e:\r\n        logger.error(f\"Бот упал с ошибкой: {e}\", exc_info=True)
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/tgbotik.py b/tgbotik.py
+--- a/tgbotik.py	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ b/tgbotik.py	(date 1773929116279)
+@@ -1,25 +1,78 @@
++import re
++import os
+ import asyncio
+ import calendar
+-import logging
++from datetime import datetime, timezone, timedelta
+ from datetime import datetime
+ from aiogram import Bot, Dispatcher, F
+-from aiogram.filters import CommandStart
+-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
++from aiogram.filters import CommandStart, Command, StateFilter
++from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
+ from aiogram.types.web_app_info import WebAppInfo
+ from aiogram.fsm.context import FSMContext
+ from aiogram.fsm.state import StatesGroup, State
++from config import TOKEN, GROUP_ID
+ from aiogram.filters import StateFilter
++from config import TOKEN
+ 
+-# Настройка логирования
+-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+-logger = logging.getLogger(__name__)
++from database import (
++    init_db,
++    create_or_update_user,
++    create_appointment,
++    get_user_appointments,
++    get_due_day_reminders,
++    get_due_hour_reminders,
++    mark_day_reminded,
++    mark_hour_reminded,
++    get_user_by_id,
++    delete_user,
++)
+ 
+-bot = Bot(token="7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU")
++bot = Bot(token=TOKEN)
++bot = Bot(token=TOKEN)
+ dp = Dispatcher()
+ 
+ 
++# Уведомление для пользователя
++async def reminder_worker():
++    while True:
++        try:
++            day_reminders = await get_due_day_reminders()
++            for appt in day_reminders:
++                await bot.send_message(
++                    appt.user_id,
++                    f"🔔 Напоминание!\n\n"
++                    f"У вас завтра запись к врачу.\n"
++                    f"🏥 {appt.place}\n"
++                    f"📍 {appt.city}\n"
++                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
++                    f"⏰ {appt.time_slot}"
++                )
++                await mark_day_reminded(appt.order_id)
++
++            hour_reminders = await get_due_hour_reminders()
++            for appt in hour_reminders:
++                await bot.send_message(
++                    appt.user_id,
++                    f"⏰ Напоминание!\n\n"
++                    f"Через 1 час у вас прием.\n"
++                    f"🏥 {appt.place}\n"
++                    f"📍 {appt.city}\n"
++                    f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
++                    f"⏰ {appt.time_slot}"
++                )
++                await mark_hour_reminded(appt.order_id)
++
++        except Exception as e:
++            print(f"Reminder worker error: {e}")
++
++        await asyncio.sleep(30)
++
++# --- Жесткая привязка к Московскому времени (UTC+3) ---
++MSK_TZ = timezone(timedelta(hours=3))
++
+ # --- Состояния ---
+ class UserState(StatesGroup):
++    waiting_for_phone = State()
+     waiting_for_consent = State()
+ 
+ 
+@@ -38,6 +91,15 @@
+     [InlineKeyboardButton(text="✅ Я даю согласие", callback_data="accept_consent")]
+ ])
+ 
++#клавиатура для телефона
++phone_kb = ReplyKeyboardMarkup(
++    keyboard=[
++        [KeyboardButton(text="📱 Поделиться номером телефона", request_contact=True)]
++    ],
++    resize_keyboard=True,
++    one_time_keyboard=True
++)
++
+ 
+ MONTH_NAMES = [
+     "Январь","Февраль","Март","Апрель","Май","Июнь",
+@@ -45,17 +107,28 @@
+ ]
+ 
+ 
++#исправление зависание календаря при клике на пустые клетки и дни недели
++@dp.callback_query(F.data == "ignore")
++async def ignore_calendar_clicks(callback: CallbackQuery):
++    # Просто гасим "часики", ничего не делая
++    await callback.answer()
++
++
+ def calendar_kb(year, month):
++    now = datetime.now(MSK_TZ)
++
++    max_month = now.month + 2
++    max_year = now.year
++    if max_month > 12:
++        max_month -= 12
++        max_year += 1
+ 
+     cal = calendar.monthcalendar(year, month)
+     keyboard = []
+ 
+     month_title = f"{MONTH_NAMES[month-1]} {year}"
+ 
+-    keyboard.append([
+-        InlineKeyboardButton(text=month_title, callback_data="ignore")
+-    ])
+-
++    keyboard.append([InlineKeyboardButton(text=month_title, callback_data="ignore")])
+     keyboard.append([
+         InlineKeyboardButton(text="Пн", callback_data="ignore"),
+         InlineKeyboardButton(text="Вт", callback_data="ignore"),
+@@ -72,19 +145,63 @@
+             if day == 0:
+                 row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+             else:
+-                row.append(
+-                    InlineKeyboardButton(
+-                        text=str(day),
+-                        callback_data=f"day_{year}_{month}_{day}"
+-                    )
+-                )
++                # ПРОВЕРКА: блокируем прошедшие дни в текущем месяце
++                if year == now.year and month == now.month and day < now.day:
++                    row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
++                else:
++                    row.append(InlineKeyboardButton(text=str(day), callback_data=f"day_{year}_{month}_{day}"))
+         keyboard.append(row)
+ 
++    nav_row = []
++
++    # ПРОВЕРКА: Кнопка "Назад" только если мы ушли вперед
++    if year > now.year or (year == now.year and month > now.month):
++        nav_row.append(InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"))
++    else:
++        nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
++
++    # ПРОВЕРКА: Кнопка "Вперед" только если не уперлись в 3 месяца
++    if year < max_year or (year == max_year and month < max_month):
++        nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}"))
++    else:
++        nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
++
++    keyboard.append(nav_row)
++
+     keyboard.append([
+         InlineKeyboardButton(text="◀️", callback_data=f"prev_{year}_{month}"),
+         InlineKeyboardButton(text="▶️", callback_data=f"next_{year}_{month}")
+     ])
+ 
++    return InlineKeyboardMarkup(inline_keyboard=keyboard)
++
++
++# СРАЗУ ПОСЛЕ КАЛЕНДАРЯ ДОБАВЛЯЕМ ФУНКЦИЮ ВРЕМЕНИ:
++def get_times_kb(year, month, day):
++    now = datetime.now(MSK_TZ)
++    is_today = (year == now.year and month == now.month and day == now.day)
++    current_hour = now.hour
++
++    time_slots = [
++        ("08:00 - 10:00", 8, "time_8"),
++        ("10:00 - 12:00", 10, "time_10"),
++        ("12:00 - 14:00", 12, "time_12"),
++        ("14:00 - 16:00", 14, "time_14"),
++        ("16:00 - 18:00", 16, "time_16"),
++        ("18:00 - 20:00", 18, "time_18")
++    ]
++
++    keyboard = []
++    for text, start_hour, cb_data in time_slots:
++        # ПРОВЕРКА: убираем часы, которые уже прошли сегодня
++        if is_today and start_hour <= current_hour:
++            continue
++        keyboard.append([InlineKeyboardButton(text=text, callback_data=cb_data)])
++
++    # Если на сегодня времени не осталось
++    if not keyboard:
++        keyboard.append([InlineKeyboardButton(text="Нет доступного времени 😔", callback_data="ignore")])
++
+     keyboard.append([
+         InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic"),
+         InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+@@ -121,10 +238,11 @@
+         ]
+     ])
+ 
+-# --- Обработчики старта и согласия ---
++# --- Обработчики старта, согласия и телефона ---
++
+ @dp.message(CommandStart())
+ async def cmd_start(message: Message, state: FSMContext):
+-    await state.clear()  # Сбрасываем любые старые состояния при перезапуске
++    await state.clear()  # Сбрасываем старые состояния
+ 
+     welcome_text = (
+         "Привет! Я цифровой помощник «Иду к врачу».\n\n"
+@@ -132,27 +250,99 @@
+         "Для продолжения работы мне необходимо ваше согласие на обработку персональных данных. "
+         "Пожалуйста, ознакомьтесь с документом по ссылке ниже и подтвердите согласие."
+     )
++    # Шаг 1: Ждем согласия
+     await state.set_state(UserState.waiting_for_consent)
+     await message.answer(welcome_text, reply_markup=consent_kb)
+ 
++@dp.message(Command("menu"))
++async def cmd_menu(message: Message, state: FSMContext):
++    await state.clear()
++    user = await get_user_by_id(message.from_user.id)
++    if user and user.phone:
++        await message.answer(
++            "Вы в главном меню.\nВыберите нужный раздел:",
++            reply_markup=get_main_menu_kb()
++        )
++    else:
++        await message.answer("Пожалуйста, сначала зарегистрируйтесь через команду /start")
++
++@dp.message(Command("reset"))
++async def cmd_reset(message: Message, state: FSMContext):
++    await state.clear()
++    await delete_user(message.from_user.id)
++    await message.answer(
++        "🧹 Ваш профиль был полностью удален из базы данных (включая записи).\n\n"
++        "Теперь вы можете проверить сценарий первого запуска.\n"
++        "Нажмите /start для новой регистрации.",
++        reply_markup=ReplyKeyboardRemove()
++    )
++
+ 
+ @dp.message(UserState.waiting_for_consent)
+ async def block_unconsented_user(message: Message):
++    # Если юзер пишет текст, пока мы ждем согласие
+     await message.answer(
+-        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота.")
++        "Пожалуйста, ознакомьтесь с документом и нажмите кнопку «✅ Я даю согласие», чтобы получить доступ к функционалу бота."
++    )
+ 
+ 
+-@dp.callback_query(F.data == "accept_consent") # Убрали UserState.waiting_for_consent
++@dp.callback_query(F.data == "accept_consent")
+ async def on_consent_accepted(callback: CallbackQuery, state: FSMContext):
+-    # Очищаем состояние, если оно было
++    await callback.answer("Согласие получено!", show_alert=False)
++    await callback.message.delete()
++
++    # Шаг 2: Переводим в состояние ожидания телефона
++    await state.set_state(UserState.waiting_for_phone)
++
++    await callback.message.answer(
++        "Спасибо! Теперь, пожалуйста, поделитесь вашим номером телефона.\n"
++        "Вы можете нажать кнопку ниже или просто отправить номер сообщением.",
++        reply_markup=phone_kb
++    )
++
++
++@dp.message(UserState.waiting_for_phone)
++async def process_phone(message: Message, state: FSMContext):
++    if message.contact:
++        raw_phone = message.contact.phone_number
++        if not str(raw_phone).startswith('+'):
++            raw_phone = '+' + str(raw_phone)
++    else:
++        raw_phone = message.text
++
++    # Очищаем от лишних символов
++    clean_phone = re.sub(r'[\s\-\(\)]', '', raw_phone)
++    if not clean_phone.startswith('+'):
++        clean_phone = '+' + clean_phone
++
++    # Жесткая валидация: формат РФ (+7 и ровно 10 цифр)
++    if not re.match(r'^\+7\d{10}$', clean_phone):
++        await message.answer(
++            "Пожалуйста, введите корректный номер телефона (например, +79991234567) или нажмите на кнопку ниже",
++            reply_markup=phone_kb
++        )
++        return
++
++    phone = clean_phone
++
++    # Сохраняем проверенный номер в память
++    await state.update_data(user_phone=phone)
++
++    # Сохранение телефона в БД
++    await create_or_update_user(
++        user_id=message.from_user.id,
++        phone=phone
++    )
++
++    # Очищаем состояние
+     await state.clear()
+ 
+-    # Убираем "часики" загрузки на кнопке
+-    await callback.answer("Согласие получено!", show_alert=False)
++    # Удаляем кнопку телефона с экрана
++    await message.answer("✅ Номер успешно получен!", reply_markup=ReplyKeyboardRemove())
+ 
+-    # Меняем сообщение на главное меню
+-    await callback.message.edit_text(
+-        "Спасибо! Теперь вам доступен весь интерфейс.\n\n"
++    # Выдаем главное меню один раз
++    await message.answer(
++        "Теперь вам доступен весь интерфейс.\n\n"
+         "Выберите нужный раздел:",
+         reply_markup=get_main_menu_kb()
+     )
+@@ -167,7 +357,7 @@
+ 
+     def cities_kb() -> InlineKeyboardMarkup:
+         return InlineKeyboardMarkup(inline_keyboard=[
+-            [InlineKeyboardButton(text="Москва", callback_data="city_moscow")],
++            [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
+             [
+                 InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
+                 InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+@@ -184,7 +374,7 @@
+ async def choose_city(callback: CallbackQuery, state: FSMContext):
+     await callback.answer()
+     city_map = {
+-        "city_moscow": "Москва"
++        "city_moscow": "г.Москва"
+     }
+ 
+     await state.update_data(city=city_map[callback.data])
+@@ -209,7 +399,7 @@
+ 
+     await state.update_data(clinic=clinic_map[callback.data])
+ 
+-    now = datetime.now()
++    now = datetime.now(MSK_TZ)
+ 
+     await state.set_state(BookingState.choosing_date)
+ 
+@@ -227,29 +417,17 @@
+     await callback.answer()
+ 
+     _, year, month, day = callback.data.split("_")
++    year, month, day = int(year), int(month), int(day)
+ 
+     month_name = [
+         "января", "февраля", "марта", "апреля", "мая", "июня",
+         "июля", "августа", "сентября", "октября", "ноября", "декабря"
+     ]
+ 
+-    date_text = f"{day} {month_name[int(month) - 1]} {year}"
++    date_text = f"{day} {month_name[month - 1]} {year}"
+ 
+-    await state.update_data(date=date_text)
+-
+-    def times_kb():
+-        return InlineKeyboardMarkup(inline_keyboard=[
+-            [InlineKeyboardButton(text="08:00 - 10:00", callback_data="time_8")],
+-            [InlineKeyboardButton(text="10:00 - 12:00", callback_data="time_10")],
+-            [InlineKeyboardButton(text="12:00 - 14:00", callback_data="time_12")],
+-            [InlineKeyboardButton(text="14:00 - 16:00", callback_data="time_14")],
+-            [InlineKeyboardButton(text="16:00 - 18:00", callback_data="time_16")],
+-            [InlineKeyboardButton(text="18:00 - 20:00", callback_data="time_18")],
+-            [
+-                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_date"),
+-                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+-            ]
+-        ])
++    # Сохраняем дату текстом и цифрами (цифры нужны для умного времени)
++    await state.update_data(date=date_text, b_year=year, b_month=month, b_day=day)
+ 
+     await state.set_state(BookingState.choosing_time)
+ 
+@@ -257,7 +435,7 @@
+ 
+     await callback.message.edit_text(
+         f"{progress}⏰ Выберите время:",
+-        reply_markup=times_kb()
++        reply_markup=get_times_kb(year, month, day)
+     )
+ 
+ async def get_progress_text(state: FSMContext):
+@@ -276,7 +454,7 @@
+         text += f"📅 {data['date']}\n"
+ 
+     if data.get("time"):
+-        text += f"⏰ {data['time']}:00\n"
++        text += f"⏰ {data['time']}\n"
+ 
+     if text:
+         text += "\n"
+@@ -369,6 +547,15 @@
+ 
+     await callback.answer()
+ 
++    # Сбрасываем выбранное время
++    await state.update_data(time=None)
++    data = await state.get_data()
++
++    # Достаем сохраненные цифры даты
++    year = data.get("b_year")
++    month = data.get("b_month")
++    day = data.get("b_day")
++
+     progress = await get_progress_text(state)
+ 
+     def times_kb():
+@@ -389,7 +576,7 @@
+ 
+     await callback.message.edit_text(
+         f"{progress}⏰ Выберите время:",
+-        reply_markup=times_kb()
++        reply_markup=get_times_kb(year, month, day)
+     )
+ 
+ 
+@@ -399,7 +586,7 @@
+     await callback.answer()
+     # воссоздаём клавиатуру города (как в start_booking)
+     cities_markup = InlineKeyboardMarkup(inline_keyboard=[
+-        [InlineKeyboardButton(text="Москва", callback_data="city_moscow")],
++        [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
+         [
+             InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
+             InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+@@ -415,6 +602,17 @@
+ 
+     data = await state.get_data()
+ 
++    # Сохранение записи в Бдж
++    await create_appointment(
++        user_id=callback.from_user.id,
++        city=data["city"],
++        place=data["clinic"],
++        year=data["b_year"],
++        month=data["b_month"],
++        day=data["b_day"],
++        time_slot=data["time"],
++    )
++
+     await state.clear()
+ 
+     await callback.message.edit_text(
+@@ -437,6 +635,8 @@
+ 
+     await callback.answer()
+ 
++    await state.update_data(clinic=None, date=None, time=None)
++
+     await state.set_state(BookingState.choosing_clinic)
+ 
+     progress = await get_progress_text(state)
+@@ -450,7 +650,9 @@
+ async def back_to_date(callback: CallbackQuery, state: FSMContext):
+     await callback.answer()
+ 
+-    now = datetime.now()
++    await state.update_data(date=None, time=None)
++
++    now = datetime.now(MSK_TZ)
+ 
+     await state.set_state(BookingState.choosing_date)
+ 
+@@ -483,8 +685,28 @@
+ @dp.callback_query(F.data == "menu_my_records")
+ async def process_my_records(callback: CallbackQuery):
+     await callback.answer()
+-    await callback.message.edit_text(
+-        "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
++
++    appointments = await get_user_appointments(callback.from_user.id)
++
++    if not appointments:
++        await callback.message.edit_text(
++            "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
++            reply_markup=get_back_to_main_kb()
++        )
++        return
++
++    text = "📋 Ваши записи:\n\n"
++    for appt in appointments:
++        text += (
++            f"🆔 Запись №{appt.order_id}\n"
++            f"📍 {appt.city}\n"
++            f"🏥 {appt.place}\n"
++            f"📅 {appt.appointment_date.strftime('%d.%m.%Y')}\n"
++            f"⏰ {appt.time_slot}\n\n"
++        )
++
++    await callback.message.edit_text(
++        text,
+         reply_markup=get_back_to_main_kb()
+     )
+ 
+@@ -497,6 +719,12 @@
+         reply_markup=get_back_to_main_kb()
+     )
+ 
++# Инициализация Бд
++async def on_startup():
++    await init_db()
++    asyncio.create_task(reminder_worker())
++
++dp.startup.register(on_startup)
+ 
+ async def main():
+     logger.info("Бот запускается...")
+@@ -508,5 +736,3 @@
+         asyncio.run(main())
+     except KeyboardInterrupt:
+         print('Exit')
+-    except Exception as e:
+-        logger.error(f"Бот упал с ошибкой: {e}", exc_info=True)
+\ No newline at end of file
+Index: .idea/inspectionProfiles/Project_Default.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/inspectionProfiles/Project_Default.xml b/.idea/inspectionProfiles/Project_Default.xml
+deleted file mode 100644
+--- a/.idea/inspectionProfiles/Project_Default.xml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,6 +0,0 @@
+-<component name="InspectionProjectProfileManager">
+-  <profile version="1.0">
+-    <option name="myName" value="Project Default" />
+-    <inspection_tool class="PyUnboundLocalVariableInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+-  </profile>
+-</component>
+\ No newline at end of file
+Index: .idea/тг бот.iml
+===================================================================
+diff --git a/.idea/тг бот.iml b/.idea/тг бот.iml
+deleted file mode 100644
+--- a/.idea/тг бот.iml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,10 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<module type="PYTHON_MODULE" version="4">
+-  <component name="NewModuleRootManager">
+-    <content url="file://$MODULE_DIR$">
+-      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+-    </content>
+-    <orderEntry type="jdk" jdkName="Python 3.13 (тг бот)" jdkType="Python SDK" />
+-    <orderEntry type="sourceFolder" forTests="false" />
+-  </component>
+-</module>
+\ No newline at end of file
+Index: webapp/index.html
+===================================================================
+diff --git a/webapp/index.html b/webapp/index.html
+deleted file mode 100644
+--- a/webapp/index.html	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,16 +0,0 @@
+-<!doctype html>
+-<html lang="ru">
+-  <head>
+-    <meta charset="UTF-8" />
+-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+-    <title>Иду к врачу</title>
+-    <link rel="preconnect" href="https://fonts.googleapis.com">
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+-  </head>
+-  <body>
+-    <div id="root"></div>
+-    <script type="module" src="/src/main.jsx"></script>
+-  </body>
+-</html>
+Index: .idea/vcs.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/vcs.xml b/.idea/vcs.xml
+deleted file mode 100644
+--- a/.idea/vcs.xml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,6 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project version="4">
+-  <component name="VcsDirectoryMappings">
+-    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+-  </component>
+-</project>
+\ No newline at end of file
+Index: webapp/src/index.css
+===================================================================
+diff --git a/webapp/src/index.css b/webapp/src/index.css
+deleted file mode 100644
+--- a/webapp/src/index.css	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,403 +0,0 @@
+-/* === Дизайн-система «Иду к врачу» === */
+-
+-:root {
+-  /* Цвета из Figma */
+-  --color-primary: #00A5A5;
+-  --color-primary-dark: #008B8B;
+-  --color-primary-light: #E6F7F7;
+-  --color-accent: #FF6B35;
+-  --color-accent-light: #FFF0EB;
+-  --color-bg: #FDF6F0;
+-  --color-bg-card: #FFFFFF;
+-  --color-text: #1A1A2E;
+-  --color-text-secondary: #6B7280;
+-  --color-text-muted: #9CA3AF;
+-  --color-border: #E5E7EB;
+-  --color-success: #10B981;
+-
+-  /* Тени */
+-  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
+-  --shadow-modal: 0 -4px 24px rgba(0, 0, 0, 0.12);
+-
+-  /* Радиусы */
+-  --radius-sm: 8px;
+-  --radius-md: 12px;
+-  --radius-lg: 16px;
+-  --radius-xl: 24px;
+-  --radius-pill: 100px;
+-
+-  /* Шрифт */
+-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+-}
+-
+-/* === Reset === */
+-*, *::before, *::after {
+-  margin: 0;
+-  padding: 0;
+-  box-sizing: border-box;
+-}
+-
+-html, body, #root {
+-  height: 100%;
+-  width: 100%;
+-  overflow-x: hidden;
+-}
+-
+-body {
+-  font-family: var(--font-family);
+-  background-color: var(--color-bg);
+-  color: var(--color-text);
+-  -webkit-font-smoothing: antialiased;
+-  -moz-osx-font-smoothing: grayscale;
+-  line-height: 1.5;
+-}
+-
+-/* === App container === */
+-.app {
+-  min-height: 100%;
+-  display: flex;
+-  flex-direction: column;
+-  max-width: 100%;
+-  overflow-x: hidden;
+-}
+-
+-/* === Screen transitions === */
+-.screen {
+-  flex: 1;
+-  display: flex;
+-  flex-direction: column;
+-  padding: 16px 20px;
+-  animation: fadeIn 0.3s ease;
+-}
+-
+-@keyframes fadeIn {
+-  from {
+-    opacity: 0;
+-    transform: translateY(12px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: translateY(0);
+-  }
+-}
+-
+-/* === Header с pill-кнопкой === */
+-.header {
+-  display: flex;
+-  align-items: center;
+-  gap: 12px;
+-  margin-bottom: 20px;
+-}
+-
+-.header__back {
+-  width: 40px;
+-  height: 40px;
+-  border-radius: 50%;
+-  border: 1.5px solid var(--color-border);
+-  background: var(--color-bg-card);
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  cursor: pointer;
+-  transition: all 0.2s;
+-  flex-shrink: 0;
+-}
+-
+-.header__back:active {
+-  transform: scale(0.92);
+-  background: var(--color-primary-light);
+-}
+-
+-.header__back svg {
+-  width: 20px;
+-  height: 20px;
+-  color: var(--color-text);
+-}
+-
+-.header__pill {
+-  flex: 1;
+-  background: var(--color-primary);
+-  color: white;
+-  font-weight: 600;
+-  font-size: 15px;
+-  text-align: center;
+-  padding: 10px 20px;
+-  border-radius: var(--radius-pill);
+-}
+-
+-/* === Карточка === */
+-.card {
+-  background: var(--color-bg-card);
+-  border-radius: var(--radius-lg);
+-  box-shadow: var(--shadow-card);
+-  padding: 20px;
+-  border-left: 4px solid var(--color-primary);
+-  transition: transform 0.2s;
+-}
+-
+-.card + .card {
+-  margin-top: 12px;
+-}
+-
+-.card:active {
+-  transform: scale(0.98);
+-}
+-
+-.card__icon {
+-  width: 48px;
+-  height: 48px;
+-  border-radius: var(--radius-md);
+-  background: var(--color-primary-light);
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  margin-bottom: 12px;
+-  font-size: 24px;
+-}
+-
+-.card__title {
+-  font-size: 16px;
+-  font-weight: 700;
+-  color: var(--color-text);
+-  margin-bottom: 4px;
+-}
+-
+-.card__subtitle {
+-  font-size: 13px;
+-  font-weight: 600;
+-  color: var(--color-primary);
+-  margin-bottom: 4px;
+-}
+-
+-.card__description {
+-  font-size: 14px;
+-  color: var(--color-text-secondary);
+-  margin-bottom: 8px;
+-}
+-
+-.card__meta {
+-  font-size: 13px;
+-  color: var(--color-text-muted);
+-  margin-bottom: 12px;
+-}
+-
+-.card__footer {
+-  display: flex;
+-  align-items: center;
+-  justify-content: space-between;
+-  margin-top: 4px;
+-}
+-
+-.card__price {
+-  font-size: 15px;
+-  font-weight: 700;
+-  color: var(--color-accent);
+-}
+-
+-.card__price--free {
+-  color: var(--color-success);
+-}
+-
+-/* === Кнопки === */
+-.btn {
+-  display: inline-flex;
+-  align-items: center;
+-  justify-content: center;
+-  gap: 8px;
+-  padding: 10px 24px;
+-  border-radius: var(--radius-pill);
+-  font-family: var(--font-family);
+-  font-size: 14px;
+-  font-weight: 600;
+-  border: none;
+-  cursor: pointer;
+-  transition: all 0.2s;
+-  text-decoration: none;
+-}
+-
+-.btn:active {
+-  transform: scale(0.95);
+-}
+-
+-.btn--primary {
+-  background: var(--color-primary);
+-  color: white;
+-}
+-
+-.btn--primary:hover {
+-  background: var(--color-primary-dark);
+-}
+-
+-.btn--accent {
+-  background: var(--color-accent);
+-  color: white;
+-}
+-
+-.btn--outline {
+-  background: transparent;
+-  color: var(--color-text);
+-  border: 1.5px solid var(--color-border);
+-}
+-
+-.btn--full {
+-  width: 100%;
+-  padding: 14px 24px;
+-  font-size: 16px;
+-}
+-
+-.btn--sm {
+-  padding: 8px 16px;
+-  font-size: 13px;
+-}
+-
+-/* === Welcome screen === */
+-.welcome {
+-  flex: 1;
+-  display: flex;
+-  flex-direction: column;
+-  align-items: center;
+-  justify-content: center;
+-  text-align: center;
+-  padding: 40px 20px;
+-}
+-
+-.welcome__title {
+-  font-size: 28px;
+-  font-weight: 800;
+-  color: var(--color-primary-dark);
+-  margin-bottom: 32px;
+-  line-height: 1.2;
+-}
+-
+-.welcome__illustration {
+-  width: 280px;
+-  max-width: 80%;
+-  margin-bottom: 40px;
+-}
+-
+-.welcome__logo {
+-  display: flex;
+-  align-items: center;
+-  gap: 8px;
+-  font-size: 22px;
+-  font-weight: 800;
+-  color: var(--color-primary-dark);
+-}
+-
+-.welcome__logo-icon {
+-  font-size: 28px;
+-}
+-
+-/* Декоративные круги */
+-.welcome__decor {
+-  position: absolute;
+-  border-radius: 50%;
+-  background: var(--color-primary);
+-  opacity: 0.06;
+-  pointer-events: none;
+-}
+-
+-.welcome__decor--1 {
+-  width: 200px;
+-  height: 200px;
+-  top: -40px;
+-  left: -60px;
+-}
+-
+-.welcome__decor--2 {
+-  width: 120px;
+-  height: 120px;
+-  bottom: 100px;
+-  right: -30px;
+-}
+-
+-/* === Main menu === */
+-.menu {
+-  flex: 1;
+-}
+-
+-.menu__title {
+-  font-size: 22px;
+-  font-weight: 700;
+-  margin-bottom: 8px;
+-}
+-
+-.menu__description {
+-  font-size: 14px;
+-  color: var(--color-text-secondary);
+-  margin-bottom: 20px;
+-  line-height: 1.6;
+-}
+-
+-/* === Bottom navigation === */
+-.nav-bottom {
+-  display: flex;
+-  gap: 12px;
+-  padding: 16px 20px;
+-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+-}
+-
+-.nav-bottom .btn {
+-  flex: 1;
+-}
+-
+-/* === Modal (Bottom Sheet) === */
+-.modal-overlay {
+-  position: fixed;
+-  inset: 0;
+-  background: rgba(0, 0, 0, 0.4);
+-  z-index: 100;
+-  animation: fadeOverlay 0.3s ease;
+-}
+-
+-@keyframes fadeOverlay {
+-  from { opacity: 0; }
+-  to { opacity: 1; }
+-}
+-
+-.modal {
+-  position: fixed;
+-  bottom: 0;
+-  left: 0;
+-  right: 0;
+-  background: var(--color-bg-card);
+-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+-  padding: 24px 20px;
+-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+-  z-index: 101;
+-  box-shadow: var(--shadow-modal);
+-  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+-  max-height: 85vh;
+-  overflow-y: auto;
+-}
+-
+-@keyframes slideUp {
+-  from { transform: translateY(100%); }
+-  to { transform: translateY(0); }
+-}
+-
+-.modal__handle {
+-  width: 40px;
+-  height: 4px;
+-  background: var(--color-border);
+-  border-radius: 2px;
+-  margin: 0 auto 20px;
+-}
+-
+-.modal__title {
+-  font-size: 20px;
+-  font-weight: 700;
+-  margin-bottom: 4px;
+-}
+-
+-.modal__subtitle {
+-  font-size: 14px;
+-  color: var(--color-text-secondary);
+-  margin-bottom: 20px;
+-}
+-
+-/* === Утилиты === */
+-.mt-auto { margin-top: auto; }
+-.text-center { text-align: center; }
+-.relative { position: relative; }
+-.overflow-hidden { overflow: hidden; }
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+deleted file mode 100644
+--- a/.idea/misc.xml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,7 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project version="4">
+-  <component name="Black">
+-    <option name="sdkName" value="Python 3.13 (тг бот)" />
+-  </component>
+-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (тг бот)" project-jdk-type="Python SDK" />
+-</project>
+\ No newline at end of file
+Index: webapp/package-lock.json
+===================================================================
+diff --git a/webapp/package-lock.json b/webapp/package-lock.json
+deleted file mode 100644
+--- a/webapp/package-lock.json	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,1791 +0,0 @@
+-{
+-  "name": "webapp",
+-  "version": "0.0.0",
+-  "lockfileVersion": 3,
+-  "requires": true,
+-  "packages": {
+-    "": {
+-      "name": "webapp",
+-      "version": "0.0.0",
+-      "dependencies": {
+-        "react": "^19.2.4",
+-        "react-dom": "^19.2.4"
+-      },
+-      "devDependencies": {
+-        "@vitejs/plugin-react": "^4.7.0",
+-        "typescript": "~5.9.3",
+-        "vite": "^7.3.1"
+-      }
+-    },
+-    "node_modules/@babel/code-frame": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.0.tgz",
+-      "integrity": "sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-validator-identifier": "^7.28.5",
+-        "js-tokens": "^4.0.0",
+-        "picocolors": "^1.1.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/compat-data": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.0.tgz",
+-      "integrity": "sha512-T1NCJqT/j9+cn8fvkt7jtwbLBfLC/1y1c7NtCeXFRgzGTsafi68MRv8yzkYSapBnFA6L3U2VSc02ciDzoAJhJg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/core": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.29.0.tgz",
+-      "integrity": "sha512-CGOfOJqWjg2qW/Mb6zNsDm+u5vFQ8DxXfbM09z69p5Z6+mE1ikP2jUXw+j42Pf1XTYED2Rni5f95npYeuwMDQA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.29.0",
+-        "@babel/generator": "^7.29.0",
+-        "@babel/helper-compilation-targets": "^7.28.6",
+-        "@babel/helper-module-transforms": "^7.28.6",
+-        "@babel/helpers": "^7.28.6",
+-        "@babel/parser": "^7.29.0",
+-        "@babel/template": "^7.28.6",
+-        "@babel/traverse": "^7.29.0",
+-        "@babel/types": "^7.29.0",
+-        "@jridgewell/remapping": "^2.3.5",
+-        "convert-source-map": "^2.0.0",
+-        "debug": "^4.1.0",
+-        "gensync": "^1.0.0-beta.2",
+-        "json5": "^2.2.3",
+-        "semver": "^6.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "funding": {
+-        "type": "opencollective",
+-        "url": "https://opencollective.com/babel"
+-      }
+-    },
+-    "node_modules/@babel/generator": {
+-      "version": "7.29.1",
+-      "resolved": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.1.tgz",
+-      "integrity": "sha512-qsaF+9Qcm2Qv8SRIMMscAvG4O3lJ0F1GuMo5HR/Bp02LopNgnZBC/EkbevHFeGs4ls/oPz9v+Bsmzbkbe+0dUw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.29.0",
+-        "@babel/types": "^7.29.0",
+-        "@jridgewell/gen-mapping": "^0.3.12",
+-        "@jridgewell/trace-mapping": "^0.3.28",
+-        "jsesc": "^3.0.2"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-compilation-targets": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-compilation-targets/-/helper-compilation-targets-7.28.6.tgz",
+-      "integrity": "sha512-JYtls3hqi15fcx5GaSNL7SCTJ2MNmjrkHXg4FSpOA/grxK8KwyZ5bubHsCq8FXCkua6xhuaaBit+3b7+VZRfcA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/compat-data": "^7.28.6",
+-        "@babel/helper-validator-option": "^7.27.1",
+-        "browserslist": "^4.24.0",
+-        "lru-cache": "^5.1.1",
+-        "semver": "^6.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-globals": {
+-      "version": "7.28.0",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.28.0.tgz",
+-      "integrity": "sha512-+W6cISkXFa1jXsDEdYA8HeevQT/FULhxzR99pxphltZcVaugps53THCeiWA8SguxxpSp3gKPiuYfSWopkLQ4hw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-module-imports": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-module-imports/-/helper-module-imports-7.28.6.tgz",
+-      "integrity": "sha512-l5XkZK7r7wa9LucGw9LwZyyCUscb4x37JWTPz7swwFE/0FMQAGpiWUZn8u9DzkSBWEcK25jmvubfpw2dnAMdbw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/traverse": "^7.28.6",
+-        "@babel/types": "^7.28.6"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-module-transforms": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-module-transforms/-/helper-module-transforms-7.28.6.tgz",
+-      "integrity": "sha512-67oXFAYr2cDLDVGLXTEABjdBJZ6drElUSI7WKp70NrpyISso3plG9SAGEF6y7zbha/wOzUByWWTJvEDVNIUGcA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-module-imports": "^7.28.6",
+-        "@babel/helper-validator-identifier": "^7.28.5",
+-        "@babel/traverse": "^7.28.6"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "peerDependencies": {
+-        "@babel/core": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-plugin-utils": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-plugin-utils/-/helper-plugin-utils-7.28.6.tgz",
+-      "integrity": "sha512-S9gzZ/bz83GRysI7gAD4wPT/AI3uCnY+9xn+Mx/KPs2JwHJIz1W8PZkg2cqyt3RNOBM8ejcXhV6y8Og7ly/Dug==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-string-parser": {
+-      "version": "7.27.1",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.27.1.tgz",
+-      "integrity": "sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-validator-identifier": {
+-      "version": "7.28.5",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.28.5.tgz",
+-      "integrity": "sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helper-validator-option": {
+-      "version": "7.27.1",
+-      "resolved": "https://registry.npmjs.org/@babel/helper-validator-option/-/helper-validator-option-7.27.1.tgz",
+-      "integrity": "sha512-YvjJow9FxbhFFKDSuFnVCe2WxXk1zWc22fFePVNEaWJEu8IrZVlda6N0uHwzZrUM1il7NC9Mlp4MaJYbYd9JSg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/helpers": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/helpers/-/helpers-7.28.6.tgz",
+-      "integrity": "sha512-xOBvwq86HHdB7WUDTfKfT/Vuxh7gElQ+Sfti2Cy6yIWNW05P8iUslOVcZ4/sKbE+/jQaukQAdz/gf3724kYdqw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/template": "^7.28.6",
+-        "@babel/types": "^7.28.6"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/parser": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.0.tgz",
+-      "integrity": "sha512-IyDgFV5GeDUVX4YdF/3CPULtVGSXXMLh1xVIgdCgxApktqnQV0r7/8Nqthg+8YLGaAtdyIlo2qIdZrbCv4+7ww==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.29.0"
+-      },
+-      "bin": {
+-        "parser": "bin/babel-parser.js"
+-      },
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+-    "node_modules/@babel/plugin-transform-react-jsx-self": {
+-      "version": "7.27.1",
+-      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-self/-/plugin-transform-react-jsx-self-7.27.1.tgz",
+-      "integrity": "sha512-6UzkCs+ejGdZ5mFFC/OCUrv028ab2fp1znZmCZjAOBKiBK2jXD1O+BPSfX8X2qjJ75fZBMSnQn3Rq2mrBJK2mw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-plugin-utils": "^7.27.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "peerDependencies": {
+-        "@babel/core": "^7.0.0-0"
+-      }
+-    },
+-    "node_modules/@babel/plugin-transform-react-jsx-source": {
+-      "version": "7.27.1",
+-      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-source/-/plugin-transform-react-jsx-source-7.27.1.tgz",
+-      "integrity": "sha512-zbwoTsBruTeKB9hSq73ha66iFeJHuaFkUbwvqElnygoNbj/jHRsSeokowZFN3CZ64IvEqcmmkVe89OPXc7ldAw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-plugin-utils": "^7.27.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      },
+-      "peerDependencies": {
+-        "@babel/core": "^7.0.0-0"
+-      }
+-    },
+-    "node_modules/@babel/template": {
+-      "version": "7.28.6",
+-      "resolved": "https://registry.npmjs.org/@babel/template/-/template-7.28.6.tgz",
+-      "integrity": "sha512-YA6Ma2KsCdGb+WC6UpBVFJGXL58MDA6oyONbjyF/+5sBgxY/dwkhLogbMT2GXXyU84/IhRw/2D1Os1B/giz+BQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.28.6",
+-        "@babel/parser": "^7.28.6",
+-        "@babel/types": "^7.28.6"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/traverse": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.0.tgz",
+-      "integrity": "sha512-4HPiQr0X7+waHfyXPZpWPfWL/J7dcN1mx9gL6WdQVMbPnF3+ZhSMs8tCxN7oHddJE9fhNE7+lxdnlyemKfJRuA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/code-frame": "^7.29.0",
+-        "@babel/generator": "^7.29.0",
+-        "@babel/helper-globals": "^7.28.0",
+-        "@babel/parser": "^7.29.0",
+-        "@babel/template": "^7.28.6",
+-        "@babel/types": "^7.29.0",
+-        "debug": "^4.3.1"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@babel/types": {
+-      "version": "7.29.0",
+-      "resolved": "https://registry.npmjs.org/@babel/types/-/types-7.29.0.tgz",
+-      "integrity": "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/helper-string-parser": "^7.27.1",
+-        "@babel/helper-validator-identifier": "^7.28.5"
+-      },
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/@esbuild/aix-ppc64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.27.3.tgz",
+-      "integrity": "sha512-9fJMTNFTWZMh5qwrBItuziu834eOCUcEqymSH7pY+zoMVEZg3gcPuBNxH1EvfVYe9h0x/Ptw8KBzv7qxb7l8dg==",
+-      "cpu": [
+-        "ppc64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "aix"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/android-arm": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.27.3.tgz",
+-      "integrity": "sha512-i5D1hPY7GIQmXlXhs2w8AWHhenb00+GxjxRncS2ZM7YNVGNfaMxgzSGuO8o8SJzRc/oZwU2bcScvVERk03QhzA==",
+-      "cpu": [
+-        "arm"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "android"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/android-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.27.3.tgz",
+-      "integrity": "sha512-YdghPYUmj/FX2SYKJ0OZxf+iaKgMsKHVPF1MAq/P8WirnSpCStzKJFjOjzsW0QQ7oIAiccHdcqjbHmJxRb/dmg==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "android"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/android-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.27.3.tgz",
+-      "integrity": "sha512-IN/0BNTkHtk8lkOM8JWAYFg4ORxBkZQf9zXiEOfERX/CzxW3Vg1ewAhU7QSWQpVIzTW+b8Xy+lGzdYXV6UZObQ==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "android"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/darwin-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.27.3.tgz",
+-      "integrity": "sha512-Re491k7ByTVRy0t3EKWajdLIr0gz2kKKfzafkth4Q8A5n1xTHrkqZgLLjFEHVD+AXdUGgQMq+Godfq45mGpCKg==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "darwin"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/darwin-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.27.3.tgz",
+-      "integrity": "sha512-vHk/hA7/1AckjGzRqi6wbo+jaShzRowYip6rt6q7VYEDX4LEy1pZfDpdxCBnGtl+A5zq8iXDcyuxwtv3hNtHFg==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "darwin"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/freebsd-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.27.3.tgz",
+-      "integrity": "sha512-ipTYM2fjt3kQAYOvo6vcxJx3nBYAzPjgTCk7QEgZG8AUO3ydUhvelmhrbOheMnGOlaSFUoHXB6un+A7q4ygY9w==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "freebsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/freebsd-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.27.3.tgz",
+-      "integrity": "sha512-dDk0X87T7mI6U3K9VjWtHOXqwAMJBNN2r7bejDsc+j03SEjtD9HrOl8gVFByeM0aJksoUuUVU9TBaZa2rgj0oA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "freebsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-arm": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.27.3.tgz",
+-      "integrity": "sha512-s6nPv2QkSupJwLYyfS+gwdirm0ukyTFNl3KTgZEAiJDd+iHZcbTPPcWCcRYH+WlNbwChgH2QkE9NSlNrMT8Gfw==",
+-      "cpu": [
+-        "arm"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.27.3.tgz",
+-      "integrity": "sha512-sZOuFz/xWnZ4KH3YfFrKCf1WyPZHakVzTiqji3WDc0BCl2kBwiJLCXpzLzUBLgmp4veFZdvN5ChW4Eq/8Fc2Fg==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-ia32": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.27.3.tgz",
+-      "integrity": "sha512-yGlQYjdxtLdh0a3jHjuwOrxQjOZYD/C9PfdbgJJF3TIZWnm/tMd/RcNiLngiu4iwcBAOezdnSLAwQDPqTmtTYg==",
+-      "cpu": [
+-        "ia32"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-loong64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.27.3.tgz",
+-      "integrity": "sha512-WO60Sn8ly3gtzhyjATDgieJNet/KqsDlX5nRC5Y3oTFcS1l0KWba+SEa9Ja1GfDqSF1z6hif/SkpQJbL63cgOA==",
+-      "cpu": [
+-        "loong64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-mips64el": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.27.3.tgz",
+-      "integrity": "sha512-APsymYA6sGcZ4pD6k+UxbDjOFSvPWyZhjaiPyl/f79xKxwTnrn5QUnXR5prvetuaSMsb4jgeHewIDCIWljrSxw==",
+-      "cpu": [
+-        "mips64el"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-ppc64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.27.3.tgz",
+-      "integrity": "sha512-eizBnTeBefojtDb9nSh4vvVQ3V9Qf9Df01PfawPcRzJH4gFSgrObw+LveUyDoKU3kxi5+9RJTCWlj4FjYXVPEA==",
+-      "cpu": [
+-        "ppc64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-riscv64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.27.3.tgz",
+-      "integrity": "sha512-3Emwh0r5wmfm3ssTWRQSyVhbOHvqegUDRd0WhmXKX2mkHJe1SFCMJhagUleMq+Uci34wLSipf8Lagt4LlpRFWQ==",
+-      "cpu": [
+-        "riscv64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-s390x": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.27.3.tgz",
+-      "integrity": "sha512-pBHUx9LzXWBc7MFIEEL0yD/ZVtNgLytvx60gES28GcWMqil8ElCYR4kvbV2BDqsHOvVDRrOxGySBM9Fcv744hw==",
+-      "cpu": [
+-        "s390x"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/linux-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.27.3.tgz",
+-      "integrity": "sha512-Czi8yzXUWIQYAtL/2y6vogER8pvcsOsk5cpwL4Gk5nJqH5UZiVByIY8Eorm5R13gq+DQKYg0+JyQoytLQas4dA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/netbsd-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.27.3.tgz",
+-      "integrity": "sha512-sDpk0RgmTCR/5HguIZa9n9u+HVKf40fbEUt+iTzSnCaGvY9kFP0YKBWZtJaraonFnqef5SlJ8/TiPAxzyS+UoA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "netbsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/netbsd-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.27.3.tgz",
+-      "integrity": "sha512-P14lFKJl/DdaE00LItAukUdZO5iqNH7+PjoBm+fLQjtxfcfFE20Xf5CrLsmZdq5LFFZzb5JMZ9grUwvtVYzjiA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "netbsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/openbsd-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.27.3.tgz",
+-      "integrity": "sha512-AIcMP77AvirGbRl/UZFTq5hjXK+2wC7qFRGoHSDrZ5v5b8DK/GYpXW3CPRL53NkvDqb9D+alBiC/dV0Fb7eJcw==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "openbsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/openbsd-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.27.3.tgz",
+-      "integrity": "sha512-DnW2sRrBzA+YnE70LKqnM3P+z8vehfJWHXECbwBmH/CU51z6FiqTQTHFenPlHmo3a8UgpLyH3PT+87OViOh1AQ==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "openbsd"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/openharmony-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.27.3.tgz",
+-      "integrity": "sha512-NinAEgr/etERPTsZJ7aEZQvvg/A6IsZG/LgZy+81wON2huV7SrK3e63dU0XhyZP4RKGyTm7aOgmQk0bGp0fy2g==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "openharmony"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/sunos-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.27.3.tgz",
+-      "integrity": "sha512-PanZ+nEz+eWoBJ8/f8HKxTTD172SKwdXebZ0ndd953gt1HRBbhMsaNqjTyYLGLPdoWHy4zLU7bDVJztF5f3BHA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "sunos"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/win32-arm64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.27.3.tgz",
+-      "integrity": "sha512-B2t59lWWYrbRDw/tjiWOuzSsFh1Y/E95ofKz7rIVYSQkUYBjfSgf6oeYPNWHToFRr2zx52JKApIcAS/D5TUBnA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/win32-ia32": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.27.3.tgz",
+-      "integrity": "sha512-QLKSFeXNS8+tHW7tZpMtjlNb7HKau0QDpwm49u0vUp9y1WOF+PEzkU84y9GqYaAVW8aH8f3GcBck26jh54cX4Q==",
+-      "cpu": [
+-        "ia32"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@esbuild/win32-x64": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.27.3.tgz",
+-      "integrity": "sha512-4uJGhsxuptu3OcpVAzli+/gWusVGwZZHTlS63hh++ehExkVT8SgiEf7/uC/PclrPPkLhZqGgCTjd0VWLo6xMqA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ],
+-      "engines": {
+-        "node": ">=18"
+-      }
+-    },
+-    "node_modules/@jridgewell/gen-mapping": {
+-      "version": "0.3.13",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz",
+-      "integrity": "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/sourcemap-codec": "^1.5.0",
+-        "@jridgewell/trace-mapping": "^0.3.24"
+-      }
+-    },
+-    "node_modules/@jridgewell/remapping": {
+-      "version": "2.3.5",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/remapping/-/remapping-2.3.5.tgz",
+-      "integrity": "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/gen-mapping": "^0.3.5",
+-        "@jridgewell/trace-mapping": "^0.3.24"
+-      }
+-    },
+-    "node_modules/@jridgewell/resolve-uri": {
+-      "version": "3.1.2",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",
+-      "integrity": "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+-    "node_modules/@jridgewell/sourcemap-codec": {
+-      "version": "1.5.5",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz",
+-      "integrity": "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/@jridgewell/trace-mapping": {
+-      "version": "0.3.31",
+-      "resolved": "https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz",
+-      "integrity": "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@jridgewell/resolve-uri": "^3.1.0",
+-        "@jridgewell/sourcemap-codec": "^1.4.14"
+-      }
+-    },
+-    "node_modules/@rolldown/pluginutils": {
+-      "version": "1.0.0-beta.27",
+-      "resolved": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.0-beta.27.tgz",
+-      "integrity": "sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/@rollup/rollup-android-arm-eabi": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.59.0.tgz",
+-      "integrity": "sha512-upnNBkA6ZH2VKGcBj9Fyl9IGNPULcjXRlg0LLeaioQWueH30p6IXtJEbKAgvyv+mJaMxSm1l6xwDXYjpEMiLMg==",
+-      "cpu": [
+-        "arm"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "android"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-android-arm64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-android-arm64/-/rollup-android-arm64-4.59.0.tgz",
+-      "integrity": "sha512-hZ+Zxj3SySm4A/DylsDKZAeVg0mvi++0PYVceVyX7hemkw7OreKdCvW2oQ3T1FMZvCaQXqOTHb8qmBShoqk69Q==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "android"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-darwin-arm64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.59.0.tgz",
+-      "integrity": "sha512-W2Psnbh1J8ZJw0xKAd8zdNgF9HRLkdWwwdWqubSVk0pUuQkoHnv7rx4GiF9rT4t5DIZGAsConRE3AxCdJ4m8rg==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "darwin"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-darwin-x64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.59.0.tgz",
+-      "integrity": "sha512-ZW2KkwlS4lwTv7ZVsYDiARfFCnSGhzYPdiOU4IM2fDbL+QGlyAbjgSFuqNRbSthybLbIJ915UtZBtmuLrQAT/w==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "darwin"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-freebsd-arm64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-freebsd-arm64/-/rollup-freebsd-arm64-4.59.0.tgz",
+-      "integrity": "sha512-EsKaJ5ytAu9jI3lonzn3BgG8iRBjV4LxZexygcQbpiU0wU0ATxhNVEpXKfUa0pS05gTcSDMKpn3Sx+QB9RlTTA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "freebsd"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-freebsd-x64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-freebsd-x64/-/rollup-freebsd-x64-4.59.0.tgz",
+-      "integrity": "sha512-d3DuZi2KzTMjImrxoHIAODUZYoUUMsuUiY4SRRcJy6NJoZ6iIqWnJu9IScV9jXysyGMVuW+KNzZvBLOcpdl3Vg==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "freebsd"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-arm-gnueabihf": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm-gnueabihf/-/rollup-linux-arm-gnueabihf-4.59.0.tgz",
+-      "integrity": "sha512-t4ONHboXi/3E0rT6OZl1pKbl2Vgxf9vJfWgmUoCEVQVxhW6Cw/c8I6hbbu7DAvgp82RKiH7TpLwxnJeKv2pbsw==",
+-      "cpu": [
+-        "arm"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-arm-musleabihf": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm-musleabihf/-/rollup-linux-arm-musleabihf-4.59.0.tgz",
+-      "integrity": "sha512-CikFT7aYPA2ufMD086cVORBYGHffBo4K8MQ4uPS/ZnY54GKj36i196u8U+aDVT2LX4eSMbyHtyOh7D7Zvk2VvA==",
+-      "cpu": [
+-        "arm"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-arm64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm64-gnu/-/rollup-linux-arm64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-jYgUGk5aLd1nUb1CtQ8E+t5JhLc9x5WdBKew9ZgAXg7DBk0ZHErLHdXM24rfX+bKrFe+Xp5YuJo54I5HFjGDAA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-arm64-musl": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm64-musl/-/rollup-linux-arm64-musl-4.59.0.tgz",
+-      "integrity": "sha512-peZRVEdnFWZ5Bh2KeumKG9ty7aCXzzEsHShOZEFiCQlDEepP1dpUl/SrUNXNg13UmZl+gzVDPsiCwnV1uI0RUA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-loong64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-loong64-gnu/-/rollup-linux-loong64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-gbUSW/97f7+r4gHy3Jlup8zDG190AuodsWnNiXErp9mT90iCy9NKKU0Xwx5k8VlRAIV2uU9CsMnEFg/xXaOfXg==",
+-      "cpu": [
+-        "loong64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-loong64-musl": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-loong64-musl/-/rollup-linux-loong64-musl-4.59.0.tgz",
+-      "integrity": "sha512-yTRONe79E+o0FWFijasoTjtzG9EBedFXJMl888NBEDCDV9I2wGbFFfJQQe63OijbFCUZqxpHz1GzpbtSFikJ4Q==",
+-      "cpu": [
+-        "loong64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-ppc64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-ppc64-gnu/-/rollup-linux-ppc64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-sw1o3tfyk12k3OEpRddF68a1unZ5VCN7zoTNtSn2KndUE+ea3m3ROOKRCZxEpmT9nsGnogpFP9x6mnLTCaoLkA==",
+-      "cpu": [
+-        "ppc64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-ppc64-musl": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-ppc64-musl/-/rollup-linux-ppc64-musl-4.59.0.tgz",
+-      "integrity": "sha512-+2kLtQ4xT3AiIxkzFVFXfsmlZiG5FXYW7ZyIIvGA7Bdeuh9Z0aN4hVyXS/G1E9bTP/vqszNIN/pUKCk/BTHsKA==",
+-      "cpu": [
+-        "ppc64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-riscv64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-riscv64-gnu/-/rollup-linux-riscv64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-NDYMpsXYJJaj+I7UdwIuHHNxXZ/b/N2hR15NyH3m2qAtb/hHPA4g4SuuvrdxetTdndfj9b1WOmy73kcPRoERUg==",
+-      "cpu": [
+-        "riscv64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-riscv64-musl": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-riscv64-musl/-/rollup-linux-riscv64-musl-4.59.0.tgz",
+-      "integrity": "sha512-nLckB8WOqHIf1bhymk+oHxvM9D3tyPndZH8i8+35p/1YiVoVswPid2yLzgX7ZJP0KQvnkhM4H6QZ5m0LzbyIAg==",
+-      "cpu": [
+-        "riscv64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-s390x-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-s390x-gnu/-/rollup-linux-s390x-gnu-4.59.0.tgz",
+-      "integrity": "sha512-oF87Ie3uAIvORFBpwnCvUzdeYUqi2wY6jRFWJAy1qus/udHFYIkplYRW+wo+GRUP4sKzYdmE1Y3+rY5Gc4ZO+w==",
+-      "cpu": [
+-        "s390x"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-x64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-3AHmtQq/ppNuUspKAlvA8HtLybkDflkMuLK4DPo77DfthRb71V84/c4MlWJXixZz4uruIH4uaa07IqoAkG64fg==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-linux-x64-musl": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.59.0.tgz",
+-      "integrity": "sha512-2UdiwS/9cTAx7qIUZB/fWtToJwvt0Vbo0zmnYt7ED35KPg13Q0ym1g442THLC7VyI6JfYTP4PiSOWyoMdV2/xg==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "linux"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-openbsd-x64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-openbsd-x64/-/rollup-openbsd-x64-4.59.0.tgz",
+-      "integrity": "sha512-M3bLRAVk6GOwFlPTIxVBSYKUaqfLrn8l0psKinkCFxl4lQvOSz8ZrKDz2gxcBwHFpci0B6rttydI4IpS4IS/jQ==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "openbsd"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-openharmony-arm64": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-openharmony-arm64/-/rollup-openharmony-arm64-4.59.0.tgz",
+-      "integrity": "sha512-tt9KBJqaqp5i5HUZzoafHZX8b5Q2Fe7UjYERADll83O4fGqJ49O1FsL6LpdzVFQcpwvnyd0i+K/VSwu/o/nWlA==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "openharmony"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-win32-arm64-msvc": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-arm64-msvc/-/rollup-win32-arm64-msvc-4.59.0.tgz",
+-      "integrity": "sha512-V5B6mG7OrGTwnxaNUzZTDTjDS7F75PO1ae6MJYdiMu60sq0CqN5CVeVsbhPxalupvTX8gXVSU9gq+Rx1/hvu6A==",
+-      "cpu": [
+-        "arm64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-win32-ia32-msvc": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-ia32-msvc/-/rollup-win32-ia32-msvc-4.59.0.tgz",
+-      "integrity": "sha512-UKFMHPuM9R0iBegwzKF4y0C4J9u8C6MEJgFuXTBerMk7EJ92GFVFYBfOZaSGLu6COf7FxpQNqhNS4c4icUPqxA==",
+-      "cpu": [
+-        "ia32"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-win32-x64-gnu": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-x64-gnu/-/rollup-win32-x64-gnu-4.59.0.tgz",
+-      "integrity": "sha512-laBkYlSS1n2L8fSo1thDNGrCTQMmxjYY5G0WFWjFFYZkKPjsMBsgJfGf4TLxXrF6RyhI60L8TMOjBMvXiTcxeA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
+-    },
+-    "node_modules/@rollup/rollup-win32-x64-msvc": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.59.0.tgz",
+-      "integrity": "sha512-2HRCml6OztYXyJXAvdDXPKcawukWY2GpR5/nxKp4iBgiO3wcoEGkAaqctIbZcNB6KlUQBIqt8VYkNSj2397EfA==",
+-      "cpu": [
+-        "x64"
+-      ],
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "win32"
+-      ]
+-    },
+-    "node_modules/@types/babel__core": {
+-      "version": "7.20.5",
+-      "resolved": "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz",
+-      "integrity": "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.20.7",
+-        "@babel/types": "^7.20.7",
+-        "@types/babel__generator": "*",
+-        "@types/babel__template": "*",
+-        "@types/babel__traverse": "*"
+-      }
+-    },
+-    "node_modules/@types/babel__generator": {
+-      "version": "7.27.0",
+-      "resolved": "https://registry.npmjs.org/@types/babel__generator/-/babel__generator-7.27.0.tgz",
+-      "integrity": "sha512-ufFd2Xi92OAVPYsy+P4n7/U7e68fex0+Ee8gSG9KX7eo084CWiQ4sdxktvdl0bOPupXtVJPY19zk6EwWqUQ8lg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@types/babel__template": {
+-      "version": "7.4.4",
+-      "resolved": "https://registry.npmjs.org/@types/babel__template/-/babel__template-7.4.4.tgz",
+-      "integrity": "sha512-h/NUaSyG5EyxBIp8YRxo4RMe2/qQgvyowRwVMzhYhBCONbW8PUsg4lkFMrhgZhUe5z3L3MiLDuvyJ/CaPa2A8A==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/parser": "^7.1.0",
+-        "@babel/types": "^7.0.0"
+-      }
+-    },
+-    "node_modules/@types/babel__traverse": {
+-      "version": "7.28.0",
+-      "resolved": "https://registry.npmjs.org/@types/babel__traverse/-/babel__traverse-7.28.0.tgz",
+-      "integrity": "sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/types": "^7.28.2"
+-      }
+-    },
+-    "node_modules/@types/estree": {
+-      "version": "1.0.8",
+-      "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.8.tgz",
+-      "integrity": "sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/@vitejs/plugin-react": {
+-      "version": "4.7.0",
+-      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz",
+-      "integrity": "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@babel/core": "^7.28.0",
+-        "@babel/plugin-transform-react-jsx-self": "^7.27.1",
+-        "@babel/plugin-transform-react-jsx-source": "^7.27.1",
+-        "@rolldown/pluginutils": "1.0.0-beta.27",
+-        "@types/babel__core": "^7.20.5",
+-        "react-refresh": "^0.17.0"
+-      },
+-      "engines": {
+-        "node": "^14.18.0 || >=16.0.0"
+-      },
+-      "peerDependencies": {
+-        "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
+-      }
+-    },
+-    "node_modules/baseline-browser-mapping": {
+-      "version": "2.10.0",
+-      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.0.tgz",
+-      "integrity": "sha512-lIyg0szRfYbiy67j9KN8IyeD7q7hcmqnJ1ddWmNt19ItGpNN64mnllmxUNFIOdOm6by97jlL6wfpTTJrmnjWAA==",
+-      "dev": true,
+-      "license": "Apache-2.0",
+-      "bin": {
+-        "baseline-browser-mapping": "dist/cli.cjs"
+-      },
+-      "engines": {
+-        "node": ">=6.0.0"
+-      }
+-    },
+-    "node_modules/browserslist": {
+-      "version": "4.28.1",
+-      "resolved": "https://registry.npmjs.org/browserslist/-/browserslist-4.28.1.tgz",
+-      "integrity": "sha512-ZC5Bd0LgJXgwGqUknZY/vkUQ04r8NXnJZ3yYi4vDmSiZmC/pdSN0NbNRPxZpbtO4uAfDUAFffO8IZoM3Gj8IkA==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/browserslist"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "baseline-browser-mapping": "^2.9.0",
+-        "caniuse-lite": "^1.0.30001759",
+-        "electron-to-chromium": "^1.5.263",
+-        "node-releases": "^2.0.27",
+-        "update-browserslist-db": "^1.2.0"
+-      },
+-      "bin": {
+-        "browserslist": "cli.js"
+-      },
+-      "engines": {
+-        "node": "^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7"
+-      }
+-    },
+-    "node_modules/caniuse-lite": {
+-      "version": "1.0.30001777",
+-      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001777.tgz",
+-      "integrity": "sha512-tmN+fJxroPndC74efCdp12j+0rk0RHwV5Jwa1zWaFVyw2ZxAuPeG8ZgWC3Wz7uSjT3qMRQ5XHZ4COgQmsCMJAQ==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/caniuse-lite"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "CC-BY-4.0"
+-    },
+-    "node_modules/convert-source-map": {
+-      "version": "2.0.0",
+-      "resolved": "https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz",
+-      "integrity": "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/debug": {
+-      "version": "4.4.3",
+-      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+-      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "ms": "^2.1.3"
+-      },
+-      "engines": {
+-        "node": ">=6.0"
+-      },
+-      "peerDependenciesMeta": {
+-        "supports-color": {
+-          "optional": true
+-        }
+-      }
+-    },
+-    "node_modules/electron-to-chromium": {
+-      "version": "1.5.307",
+-      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.307.tgz",
+-      "integrity": "sha512-5z3uFKBWjiNR44nFcYdkcXjKMbg5KXNdciu7mhTPo9tB7NbqSNP2sSnGR+fqknZSCwKkBN+oxiiajWs4dT6ORg==",
+-      "dev": true,
+-      "license": "ISC"
+-    },
+-    "node_modules/esbuild": {
+-      "version": "0.27.3",
+-      "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.27.3.tgz",
+-      "integrity": "sha512-8VwMnyGCONIs6cWue2IdpHxHnAjzxnw2Zr7MkVxB2vjmQ2ivqGFb4LEG3SMnv0Gb2F/G/2yA8zUaiL1gywDCCg==",
+-      "dev": true,
+-      "hasInstallScript": true,
+-      "license": "MIT",
+-      "bin": {
+-        "esbuild": "bin/esbuild"
+-      },
+-      "engines": {
+-        "node": ">=18"
+-      },
+-      "optionalDependencies": {
+-        "@esbuild/aix-ppc64": "0.27.3",
+-        "@esbuild/android-arm": "0.27.3",
+-        "@esbuild/android-arm64": "0.27.3",
+-        "@esbuild/android-x64": "0.27.3",
+-        "@esbuild/darwin-arm64": "0.27.3",
+-        "@esbuild/darwin-x64": "0.27.3",
+-        "@esbuild/freebsd-arm64": "0.27.3",
+-        "@esbuild/freebsd-x64": "0.27.3",
+-        "@esbuild/linux-arm": "0.27.3",
+-        "@esbuild/linux-arm64": "0.27.3",
+-        "@esbuild/linux-ia32": "0.27.3",
+-        "@esbuild/linux-loong64": "0.27.3",
+-        "@esbuild/linux-mips64el": "0.27.3",
+-        "@esbuild/linux-ppc64": "0.27.3",
+-        "@esbuild/linux-riscv64": "0.27.3",
+-        "@esbuild/linux-s390x": "0.27.3",
+-        "@esbuild/linux-x64": "0.27.3",
+-        "@esbuild/netbsd-arm64": "0.27.3",
+-        "@esbuild/netbsd-x64": "0.27.3",
+-        "@esbuild/openbsd-arm64": "0.27.3",
+-        "@esbuild/openbsd-x64": "0.27.3",
+-        "@esbuild/openharmony-arm64": "0.27.3",
+-        "@esbuild/sunos-x64": "0.27.3",
+-        "@esbuild/win32-arm64": "0.27.3",
+-        "@esbuild/win32-ia32": "0.27.3",
+-        "@esbuild/win32-x64": "0.27.3"
+-      }
+-    },
+-    "node_modules/escalade": {
+-      "version": "3.2.0",
+-      "resolved": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz",
+-      "integrity": "sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+-    "node_modules/fdir": {
+-      "version": "6.5.0",
+-      "resolved": "https://registry.npmjs.org/fdir/-/fdir-6.5.0.tgz",
+-      "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=12.0.0"
+-      },
+-      "peerDependencies": {
+-        "picomatch": "^3 || ^4"
+-      },
+-      "peerDependenciesMeta": {
+-        "picomatch": {
+-          "optional": true
+-        }
+-      }
+-    },
+-    "node_modules/fsevents": {
+-      "version": "2.3.3",
+-      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+-      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
+-      "dev": true,
+-      "hasInstallScript": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "os": [
+-        "darwin"
+-      ],
+-      "engines": {
+-        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+-      }
+-    },
+-    "node_modules/gensync": {
+-      "version": "1.0.0-beta.2",
+-      "resolved": "https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz",
+-      "integrity": "sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=6.9.0"
+-      }
+-    },
+-    "node_modules/js-tokens": {
+-      "version": "4.0.0",
+-      "resolved": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+-      "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/jsesc": {
+-      "version": "3.1.0",
+-      "resolved": "https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz",
+-      "integrity": "sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "bin": {
+-        "jsesc": "bin/jsesc"
+-      },
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+-    "node_modules/json5": {
+-      "version": "2.2.3",
+-      "resolved": "https://registry.npmjs.org/json5/-/json5-2.2.3.tgz",
+-      "integrity": "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "bin": {
+-        "json5": "lib/cli.js"
+-      },
+-      "engines": {
+-        "node": ">=6"
+-      }
+-    },
+-    "node_modules/lru-cache": {
+-      "version": "5.1.1",
+-      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz",
+-      "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
+-      "dev": true,
+-      "license": "ISC",
+-      "dependencies": {
+-        "yallist": "^3.0.2"
+-      }
+-    },
+-    "node_modules/ms": {
+-      "version": "2.1.3",
+-      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+-      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/nanoid": {
+-      "version": "3.3.11",
+-      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.11.tgz",
+-      "integrity": "sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "bin": {
+-        "nanoid": "bin/nanoid.cjs"
+-      },
+-      "engines": {
+-        "node": "^10 || ^12 || ^13.7 || ^14 || >=15.0.1"
+-      }
+-    },
+-    "node_modules/node-releases": {
+-      "version": "2.0.36",
+-      "resolved": "https://registry.npmjs.org/node-releases/-/node-releases-2.0.36.tgz",
+-      "integrity": "sha512-TdC8FSgHz8Mwtw9g5L4gR/Sh9XhSP/0DEkQxfEFXOpiul5IiHgHan2VhYYb6agDSfp4KuvltmGApc8HMgUrIkA==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+-    "node_modules/picocolors": {
+-      "version": "1.1.1",
+-      "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+-      "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==",
+-      "dev": true,
+-      "license": "ISC"
+-    },
+-    "node_modules/picomatch": {
+-      "version": "4.0.3",
+-      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.3.tgz",
+-      "integrity": "sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=12"
+-      },
+-      "funding": {
+-        "url": "https://github.com/sponsors/jonschlinkert"
+-      }
+-    },
+-    "node_modules/postcss": {
+-      "version": "8.5.8",
+-      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.8.tgz",
+-      "integrity": "sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/postcss/"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/postcss"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "nanoid": "^3.3.11",
+-        "picocolors": "^1.1.1",
+-        "source-map-js": "^1.2.1"
+-      },
+-      "engines": {
+-        "node": "^10 || ^12 || >=14"
+-      }
+-    },
+-    "node_modules/react": {
+-      "version": "19.2.4",
+-      "resolved": "https://registry.npmjs.org/react/-/react-19.2.4.tgz",
+-      "integrity": "sha512-9nfp2hYpCwOjAN+8TZFGhtWEwgvWHXqESH8qT89AT/lWklpLON22Lc8pEtnpsZz7VmawabSU0gCjnj8aC0euHQ==",
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=0.10.0"
+-      }
+-    },
+-    "node_modules/react-dom": {
+-      "version": "19.2.4",
+-      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.4.tgz",
+-      "integrity": "sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "scheduler": "^0.27.0"
+-      },
+-      "peerDependencies": {
+-        "react": "^19.2.4"
+-      }
+-    },
+-    "node_modules/react-refresh": {
+-      "version": "0.17.0",
+-      "resolved": "https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz",
+-      "integrity": "sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "engines": {
+-        "node": ">=0.10.0"
+-      }
+-    },
+-    "node_modules/rollup": {
+-      "version": "4.59.0",
+-      "resolved": "https://registry.npmjs.org/rollup/-/rollup-4.59.0.tgz",
+-      "integrity": "sha512-2oMpl67a3zCH9H79LeMcbDhXW/UmWG/y2zuqnF2jQq5uq9TbM9TVyXvA4+t+ne2IIkBdrLpAaRQAvo7YI/Yyeg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "@types/estree": "1.0.8"
+-      },
+-      "bin": {
+-        "rollup": "dist/bin/rollup"
+-      },
+-      "engines": {
+-        "node": ">=18.0.0",
+-        "npm": ">=8.0.0"
+-      },
+-      "optionalDependencies": {
+-        "@rollup/rollup-android-arm-eabi": "4.59.0",
+-        "@rollup/rollup-android-arm64": "4.59.0",
+-        "@rollup/rollup-darwin-arm64": "4.59.0",
+-        "@rollup/rollup-darwin-x64": "4.59.0",
+-        "@rollup/rollup-freebsd-arm64": "4.59.0",
+-        "@rollup/rollup-freebsd-x64": "4.59.0",
+-        "@rollup/rollup-linux-arm-gnueabihf": "4.59.0",
+-        "@rollup/rollup-linux-arm-musleabihf": "4.59.0",
+-        "@rollup/rollup-linux-arm64-gnu": "4.59.0",
+-        "@rollup/rollup-linux-arm64-musl": "4.59.0",
+-        "@rollup/rollup-linux-loong64-gnu": "4.59.0",
+-        "@rollup/rollup-linux-loong64-musl": "4.59.0",
+-        "@rollup/rollup-linux-ppc64-gnu": "4.59.0",
+-        "@rollup/rollup-linux-ppc64-musl": "4.59.0",
+-        "@rollup/rollup-linux-riscv64-gnu": "4.59.0",
+-        "@rollup/rollup-linux-riscv64-musl": "4.59.0",
+-        "@rollup/rollup-linux-s390x-gnu": "4.59.0",
+-        "@rollup/rollup-linux-x64-gnu": "4.59.0",
+-        "@rollup/rollup-linux-x64-musl": "4.59.0",
+-        "@rollup/rollup-openbsd-x64": "4.59.0",
+-        "@rollup/rollup-openharmony-arm64": "4.59.0",
+-        "@rollup/rollup-win32-arm64-msvc": "4.59.0",
+-        "@rollup/rollup-win32-ia32-msvc": "4.59.0",
+-        "@rollup/rollup-win32-x64-gnu": "4.59.0",
+-        "@rollup/rollup-win32-x64-msvc": "4.59.0",
+-        "fsevents": "~2.3.2"
+-      }
+-    },
+-    "node_modules/scheduler": {
+-      "version": "0.27.0",
+-      "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz",
+-      "integrity": "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==",
+-      "license": "MIT"
+-    },
+-    "node_modules/semver": {
+-      "version": "6.3.1",
+-      "resolved": "https://registry.npmjs.org/semver/-/semver-6.3.1.tgz",
+-      "integrity": "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==",
+-      "dev": true,
+-      "license": "ISC",
+-      "bin": {
+-        "semver": "bin/semver.js"
+-      }
+-    },
+-    "node_modules/source-map-js": {
+-      "version": "1.2.1",
+-      "resolved": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+-      "integrity": "sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==",
+-      "dev": true,
+-      "license": "BSD-3-Clause",
+-      "engines": {
+-        "node": ">=0.10.0"
+-      }
+-    },
+-    "node_modules/tinyglobby": {
+-      "version": "0.2.15",
+-      "resolved": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.15.tgz",
+-      "integrity": "sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "fdir": "^6.5.0",
+-        "picomatch": "^4.0.3"
+-      },
+-      "engines": {
+-        "node": ">=12.0.0"
+-      },
+-      "funding": {
+-        "url": "https://github.com/sponsors/SuperchupuDev"
+-      }
+-    },
+-    "node_modules/typescript": {
+-      "version": "5.9.3",
+-      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+-      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+-      "dev": true,
+-      "license": "Apache-2.0",
+-      "bin": {
+-        "tsc": "bin/tsc",
+-        "tsserver": "bin/tsserver"
+-      },
+-      "engines": {
+-        "node": ">=14.17"
+-      }
+-    },
+-    "node_modules/update-browserslist-db": {
+-      "version": "1.2.3",
+-      "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz",
+-      "integrity": "sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==",
+-      "dev": true,
+-      "funding": [
+-        {
+-          "type": "opencollective",
+-          "url": "https://opencollective.com/browserslist"
+-        },
+-        {
+-          "type": "tidelift",
+-          "url": "https://tidelift.com/funding/github/npm/browserslist"
+-        },
+-        {
+-          "type": "github",
+-          "url": "https://github.com/sponsors/ai"
+-        }
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "escalade": "^3.2.0",
+-        "picocolors": "^1.1.1"
+-      },
+-      "bin": {
+-        "update-browserslist-db": "cli.js"
+-      },
+-      "peerDependencies": {
+-        "browserslist": ">= 4.21.0"
+-      }
+-    },
+-    "node_modules/vite": {
+-      "version": "7.3.1",
+-      "resolved": "https://registry.npmjs.org/vite/-/vite-7.3.1.tgz",
+-      "integrity": "sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "dependencies": {
+-        "esbuild": "^0.27.0",
+-        "fdir": "^6.5.0",
+-        "picomatch": "^4.0.3",
+-        "postcss": "^8.5.6",
+-        "rollup": "^4.43.0",
+-        "tinyglobby": "^0.2.15"
+-      },
+-      "bin": {
+-        "vite": "bin/vite.js"
+-      },
+-      "engines": {
+-        "node": "^20.19.0 || >=22.12.0"
+-      },
+-      "funding": {
+-        "url": "https://github.com/vitejs/vite?sponsor=1"
+-      },
+-      "optionalDependencies": {
+-        "fsevents": "~2.3.3"
+-      },
+-      "peerDependencies": {
+-        "@types/node": "^20.19.0 || >=22.12.0",
+-        "jiti": ">=1.21.0",
+-        "less": "^4.0.0",
+-        "lightningcss": "^1.21.0",
+-        "sass": "^1.70.0",
+-        "sass-embedded": "^1.70.0",
+-        "stylus": ">=0.54.8",
+-        "sugarss": "^5.0.0",
+-        "terser": "^5.16.0",
+-        "tsx": "^4.8.1",
+-        "yaml": "^2.4.2"
+-      },
+-      "peerDependenciesMeta": {
+-        "@types/node": {
+-          "optional": true
+-        },
+-        "jiti": {
+-          "optional": true
+-        },
+-        "less": {
+-          "optional": true
+-        },
+-        "lightningcss": {
+-          "optional": true
+-        },
+-        "sass": {
+-          "optional": true
+-        },
+-        "sass-embedded": {
+-          "optional": true
+-        },
+-        "stylus": {
+-          "optional": true
+-        },
+-        "sugarss": {
+-          "optional": true
+-        },
+-        "terser": {
+-          "optional": true
+-        },
+-        "tsx": {
+-          "optional": true
+-        },
+-        "yaml": {
+-          "optional": true
+-        }
+-      }
+-    },
+-    "node_modules/yallist": {
+-      "version": "3.1.1",
+-      "resolved": "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz",
+-      "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==",
+-      "dev": true,
+-      "license": "ISC"
+-    }
+-  }
+-}
+Index: .idea/modules.xml
+===================================================================
+diff --git a/.idea/modules.xml b/.idea/modules.xml
+deleted file mode 100644
+--- a/.idea/modules.xml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,8 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project version="4">
+-  <component name="ProjectModuleManager">
+-    <modules>
+-      <module fileurl="file://$PROJECT_DIR$/.idea/тг бот.iml" filepath="$PROJECT_DIR$/.idea/тг бот.iml" />
+-    </modules>
+-  </component>
+-</project>
+\ No newline at end of file
+Index: .idea/.gitignore
+===================================================================
+diff --git a/.idea/.gitignore b/.idea/.gitignore
+deleted file mode 100644
+--- a/.idea/.gitignore	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,3 +0,0 @@
+-# Default ignored files
+-/shelf/
+-/workspace.xml
+Index: webapp/.gitignore
+===================================================================
+diff --git a/webapp/.gitignore b/webapp/.gitignore
+deleted file mode 100644
+--- a/webapp/.gitignore	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,24 +0,0 @@
+-# Logs
+-logs
+-*.log
+-npm-debug.log*
+-yarn-debug.log*
+-yarn-error.log*
+-pnpm-debug.log*
+-lerna-debug.log*
+-
+-node_modules
+-dist
+-dist-ssr
+-*.local
+-
+-# Editor directories and files
+-.vscode/*
+-!.vscode/extensions.json
+-.idea
+-.DS_Store
+-*.suo
+-*.ntvs*
+-*.njsproj
+-*.sln
+-*.sw?
+Index: webapp/public/vite.svg
+===================================================================
+diff --git a/webapp/public/vite.svg b/webapp/public/vite.svg
+deleted file mode 100644
+--- a/webapp/public/vite.svg	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,1 +0,0 @@
+-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="31.88" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 257"><defs><linearGradient id="IconifyId1813088fe1fbc01fb466" x1="-.828%" x2="57.636%" y1="7.652%" y2="78.411%"><stop offset="0%" stop-color="#41D1FF"></stop><stop offset="100%" stop-color="#BD34FE"></stop></linearGradient><linearGradient id="IconifyId1813088fe1fbc01fb467" x1="43.376%" x2="50.316%" y1="2.242%" y2="89.03%"><stop offset="0%" stop-color="#FFEA83"></stop><stop offset="8.333%" stop-color="#FFDD35"></stop><stop offset="100%" stop-color="#FFA800"></stop></linearGradient></defs><path fill="url(#IconifyId1813088fe1fbc01fb466)" d="M255.153 37.938L134.897 252.976c-2.483 4.44-8.862 4.466-11.382.048L.875 37.958c-2.746-4.814 1.371-10.646 6.827-9.67l120.385 21.517a6.537 6.537 0 0 0 2.322-.004l117.867-21.483c5.438-.991 9.574 4.796 6.877 9.62Z"></path><path fill="url(#IconifyId1813088fe1fbc01fb467)" d="M185.432.063L96.44 17.501a3.268 3.268 0 0 0-2.634 3.014l-5.474 92.456a3.268 3.268 0 0 0 3.997 3.378l24.777-5.718c2.318-.535 4.413 1.507 3.936 3.838l-7.361 36.047c-.495 2.426 1.782 4.5 4.151 3.78l15.304-4.649c2.372-.72 4.652 1.36 4.15 3.788l-11.698 56.621c-.732 3.542 3.979 5.473 5.943 2.437l1.313-2.028l72.516-144.72c1.215-2.423-.88-5.186-3.54-4.672l-25.505 4.922c-2.396.462-4.435-1.77-3.759-4.114l16.646-57.705c.677-2.35-1.37-4.583-3.769-4.113Z"></path></svg>
+\ No newline at end of file
+Index: webapp/package.json
+===================================================================
+diff --git a/webapp/package.json b/webapp/package.json
+deleted file mode 100644
+--- a/webapp/package.json	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,20 +0,0 @@
+-{
+-  "name": "webapp",
+-  "private": true,
+-  "version": "0.0.0",
+-  "type": "module",
+-  "scripts": {
+-    "dev": "vite",
+-    "build": "vite build",
+-    "preview": "vite preview",
+-    "deploy": "npm run build && npx -y gh-pages -d dist"
+-  },
+-  "devDependencies": {
+-    "@vitejs/plugin-react": "^4.7.0",
+-    "vite": "^7.3.1"
+-  },
+-  "dependencies": {
+-    "react": "^19.2.4",
+-    "react-dom": "^19.2.4"
+-  }
+-}
+Index: webapp/vite.config.js
+===================================================================
+diff --git a/webapp/vite.config.js b/webapp/vite.config.js
+deleted file mode 100644
+--- a/webapp/vite.config.js	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,11 +0,0 @@
+-import { defineConfig } from 'vite'
+-import react from '@vitejs/plugin-react'
+-
+-export default defineConfig({
+-  plugins: [react()],
+-  base: '/tg_bot/',
+-  server: {
+-    port: 5173,
+-    host: true
+-  }
+-})
+Index: .idea/inspectionProfiles/profiles_settings.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/inspectionProfiles/profiles_settings.xml b/.idea/inspectionProfiles/profiles_settings.xml
+deleted file mode 100644
+--- a/.idea/inspectionProfiles/profiles_settings.xml	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ /dev/null	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
+@@ -1,6 +0,0 @@
+-<component name="InspectionProjectProfileManager">
+-  <settings>
+-    <option name="USE_PROJECT_PROFILE" value="false" />
+-    <version value="1.0" />
+-  </settings>
+-</component>
+\ No newline at end of file
+Index: config.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>TOKEN = \"7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU\" #ОСНОВНОЙ ТОКЕН ДЛЯ https://t.me/idukvrachubot\r\n#TOKEN = \"8714773904:AAFtu6yyMC7Ne1Ogxe2Xrd_fCrKkgPChYVc\" # Тестовый токен для бота https://t.me/test_medicalllll_bot\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config.py b/config.py
+--- a/config.py	(revision ceb03f897a12ad7bbec44ccede6f34ca24e8b8da)
++++ b/config.py	(date 1773928954787)
+@@ -1,2 +1,5 @@
+ TOKEN = "7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU" #ОСНОВНОЙ ТОКЕН ДЛЯ https://t.me/idukvrachubot
+ #TOKEN = "8714773904:AAFtu6yyMC7Ne1Ogxe2Xrd_fCrKkgPChYVc" # Тестовый токен для бота https://t.me/test_medicalllll_bot
++GROUP_ID = -1003842744166 #токен для беседы поддержки по запросу
++# ДОБАВЛЕНО
++DATABASE_URL = "postgresql+asyncpg://postgres:1@localhost:5432/doctor_bot" #База данных
+\ No newline at end of file
+Index: database.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/database.py b/database.py
+new file mode 100644
+--- /dev/null	(date 1773929195596)
++++ b/database.py	(date 1773929195596)
+@@ -0,0 +1,228 @@
++
++import asyncio
++from datetime import datetime, timedelta, timezone, time as dt_time
++
++from sqlalchemy import (
++    BigInteger,
++    Boolean,
++    Date,
++    ForeignKey,
++    Integer,
++    String,
++    Time,
++    DateTime,
++    select,
++)
++from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
++from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
++
++from config import DATABASE_URL
++
++MSK_TZ = timezone(timedelta(hours=3))
++
++class Base(DeclarativeBase):
++    pass
++
++# Таблица пользователей
++# user_id, phone, root права
++class User(Base):
++    __tablename__ = "users"
++
++    # Telegram user id
++    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
++    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
++    is_root: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(MSK_TZ))
++
++    appointments: Mapped[list["Appointment"]] = relationship(back_populates="user")
++
++
++# Таблица записей
++# order_id, user_id, date, time, place
++# + флаги уведомлений
++class Appointment(Base):g
++    __tablename__ = "appointments"
++
++    order_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
++    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.user_id"), nullable=False)
++
++    appointment_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
++    appointment_time: Mapped[dt_time] = mapped_column(Time, nullable=False)
++
++    # место = клиника
++    place: Mapped[str] = mapped_column(String(255), nullable=False)
++
++    # доп. поле для красивого отображения
++    city: Mapped[str] = mapped_column(String(100), nullable=False)
++    time_slot: Mapped[str] = mapped_column(String(50), nullable=False)
++
++    notified_day_before: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
++    notified_hour_before: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
++
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(MSK_TZ))
++
++    user: Mapped["User"] = relationship(back_populates="appointments")
++
++
++engine = create_async_engine(DATABASE_URL, echo=False)
++async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
++
++
++async def init_db():
++    async with engine.begin() as conn:
++        await conn.run_sync(Base.metadata.create_all)
++
++
++async def create_or_update_user(user_id: int, phone: str | None = None, is_root: bool = False):
++    async with async_session() as session:
++        user = await session.get(User, user_id)
++
++        if user is None:
++            user = User(
++                user_id=user_id,
++                phone=phone,
++                is_root=is_root
++            )
++            session.add(user)
++        else:
++            if phone:
++                user.phone = phone
++
++        await session.commit()
++
++
++async def get_user_by_id(user_id: int):
++    async with async_session() as session:
++        return await session.get(User, user_id)
++
++async def delete_user(user_id: int):
++    async with async_session() as session:
++        stmt = select(Appointment).where(Appointment.user_id == user_id)
++        result = await session.execute(stmt)
++        appointments = result.scalars().all()
++        for appt in appointments:
++            await session.delete(appt)
++        
++        user = await session.get(User, user_id)
++        if user:
++            await session.delete(user)
++        
++        await session.commit()
++
++
++def parse_slot_start(slot_text: str) -> dt_time:
++    # "08:00 - 10:00" -> 08:00
++    start_str = slot_text.split("-")[0].strip()
++    hour, minute = map(int, start_str.split(":"))
++    return dt_time(hour=hour, minute=minute)
++
++
++async def create_appointment(
++    user_id: int,
++    city: str,
++    place: str,
++    year: int,
++    month: int,
++    day: int,
++    time_slot: str,
++):
++    async with async_session() as session:
++        user = await session.get(User, user_id)
++        if user is None:
++            user = User(user_id=user_id)
++            session.add(user)
++            await session.flush()
++
++        appointment = Appointment(
++            user_id=user_id,
++            city=city,
++            place=place,
++            appointment_date=datetime(year, month, day).date(),
++            appointment_time=parse_slot_start(time_slot),
++            time_slot=time_slot,
++        )
++        session.add(appointment)
++        await session.commit()
++        await session.refresh(appointment)
++        return appointment
++
++
++async def get_user_appointments(user_id: int):
++    async with async_session() as session:
++        stmt = (
++            select(Appointment)
++            .where(Appointment.user_id == user_id)
++            .order_by(Appointment.appointment_date, Appointment.appointment_time)
++        )
++        result = await session.execute(stmt)
++        return result.scalars().all()
++
++
++async def get_due_day_reminders():
++    async with async_session() as session:
++        stmt = select(Appointment).where(Appointment.notified_day_before == False)
++        result = await session.execute(stmt)
++        appointments = result.scalars().all()
++
++        now = datetime.now(MSK_TZ)
++        due = []
++
++        for appt in appointments:
++            appt_dt = datetime.combine(
++                appt.appointment_date,
++                appt.appointment_time,
++                tzinfo=MSK_TZ
++            )
++            delta = appt_dt - now
++
++            # от 23 до 24 часов
++            if timedelta(hours=23) <= delta <= timedelta(hours=24):
++               due.append(appt)
++            # проверка уведомлений
++            #if timedelta(seconds=30) <= delta <= timedelta(minutes=2):
++                #due.append(appt)
++
++        return due
++
++
++async def get_due_hour_reminders():
++    async with async_session() as session:
++        stmt = select(Appointment).where(Appointment.notified_hour_before == False)
++        result = await session.execute(stmt)
++        appointments = result.scalars().all()
++
++        now = datetime.now(MSK_TZ)
++        due = []
++
++        for appt in appointments:
++            appt_dt = datetime.combine(
++                appt.appointment_date,
++                appt.appointment_time,
++                tzinfo=MSK_TZ
++            )
++            delta = appt_dt - now
++
++            # от 59 до 60 минут
++            if timedelta(minutes=59) <= delta <= timedelta(hours=1):
++                due.append(appt)
++            # Тест уведомлений
++            #if timedelta(seconds=10) <= delta <= timedelta(minutes=1):
++                #due.append(appt)
++
++        return due
++
++
++async def mark_day_reminded(order_id: int):
++    async with async_session() as session:
++        appt = await session.get(Appointment, order_id)
++        if appt:
++            appt.notified_day_before = True
++            await session.commit()
++
++
++async def mark_hour_reminded(order_id: int):
++    async with async_session() as session:
++        appt = await session.get(Appointment, order_id)
++        if appt:
++            appt.notified_hour_before = True
++            await session.commit()
+\ No newline at end of file

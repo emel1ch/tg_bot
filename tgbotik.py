@@ -5,7 +5,7 @@ import calendar
 from datetime import datetime, timezone, timedelta
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.filters import CommandStart, Command, StateFilter, BaseFilter
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
@@ -13,7 +13,8 @@ from aiogram.fsm.state import StatesGroup, State
 from config import TOKEN, GROUP_ID
 from aiogram.filters import StateFilter
 from config import TOKEN
-
+from config import SUPERADMIN_ID
+from database import get_all_users, grant_admin_rights
 from database import (
     init_db,
     create_or_update_user,
@@ -768,6 +769,156 @@ async def main():
     print("Бот запускается...")
     await dp.start_polling(bot)
 
+
+# --- Настройки и Фильтры Админки ---
+class AdminState(StatesGroup):
+    waiting_for_broadcast = State()
+    waiting_for_new_admin_id = State()
+
+
+class IsAdmin(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        # 1. Суперадмин из конфига пускается всегда
+        if message.from_user.id == SUPERADMIN_ID:
+            return True
+
+        # 2. Остальные проверяются по базе данных
+        user = await get_user_by_id(message.from_user.id)
+        return user.is_root if user else False
+
+
+def get_admin_kb(user_id: int):
+    kb = [
+        [InlineKeyboardButton(text="📢 Сделать рассылку", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")]
+    ]
+    # Кнопку добавления админов показываем ТОЛЬКО Суперадмину
+    if user_id == SUPERADMIN_ID:
+        kb.append([InlineKeyboardButton(text="👮‍♂️ Добавить админа", callback_data="admin_add_new")])
+
+    kb.append([InlineKeyboardButton(text="🏠 Выйти", callback_data="return_main")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ==========================================
+#             АДМИН - ПАНЕЛЬ
+# ==========================================
+
+# 1. Вход в админку
+@dp.message(Command("admin"), IsAdmin())
+async def cmd_admin(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "👋 <b>Добро пожаловать в панель администратора!</b>",
+        parse_mode="HTML",
+        reply_markup=get_admin_kb(message.from_user.id)
+    )
+
+
+# 2. Статистика
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery):
+    await callback.answer()
+    users = await get_all_users()
+    await callback.message.edit_text(
+        f"📊 <b>Статистика бота:</b>\n\n👥 Пользователей в базе: {len(users)}",
+        parse_mode="HTML",
+        reply_markup=get_admin_kb(callback.from_user.id)
+    )
+
+
+# 3. Добавление нового админа по ID
+@dp.callback_query(F.data == "admin_add_new")
+async def ask_for_new_admin(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != SUPERADMIN_ID:
+        await callback.answer("У вас нет прав для этого действия!", show_alert=True)
+        return
+
+    await callback.answer()
+    await state.set_state(AdminState.waiting_for_new_admin_id)
+
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_admin_action")]
+    ])
+
+    await callback.message.edit_text(
+        "👮‍♂️ <b>Добавление администратора</b>\n\n"
+        "Отправьте мне Telegram ID пользователя (только цифры).\n"
+        "<i>Пользователь уже должен быть в базе (нажать /start).</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_kb
+    )
+
+
+@dp.message(AdminState.waiting_for_new_admin_id, IsAdmin())
+async def process_new_admin(message: Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("❌ ID должен состоять только из цифр. Попробуйте еще раз:")
+        return
+
+    target_id = int(message.text)
+    success = await grant_admin_rights(target_id)
+
+    await state.clear()
+
+    if success:
+        await message.answer(
+            f"✅ Пользователь <code>{target_id}</code> назначен администратором!",
+            parse_mode="HTML",
+            reply_markup=get_admin_kb(message.from_user.id)
+        )
+    else:
+        await message.answer(
+            f"❌ Пользователь {target_id} не найден в базе данных.\nПусть сначала напишет /start.",
+            reply_markup=get_admin_kb(message.from_user.id)
+        )
+
+
+# 4. Запуск рассылки
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(AdminState.waiting_for_broadcast)
+
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_admin_action")]
+    ])
+
+    await callback.message.edit_text(
+        "📢 <b>Режим рассылки</b>\n\nОтправьте боту сообщение (текст, фото или видео).",
+        parse_mode="HTML",
+        reply_markup=cancel_kb
+    )
+
+
+@dp.message(AdminState.waiting_for_broadcast, IsAdmin())
+async def process_broadcast(message: Message, state: FSMContext):
+    users = await get_all_users()
+    status_msg = await message.answer(f"⏳ Рассылаю {len(users)} пользователям...")
+
+    success = 0
+    for user in users:
+        try:
+            await message.copy_to(chat_id=user.user_id)
+            success += 1
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+
+    await state.clear()
+    await status_msg.edit_text(
+        f"✅ <b>Рассылка завершена!</b>\nДоставлено: {success}",
+        parse_mode="HTML",
+        reply_markup=get_admin_kb(message.from_user.id)
+    )
+
+
+# 5. Общая кнопка отмены действий (для рассылки и добавления админа)
+@dp.callback_query(F.data == "cancel_admin_action")
+async def cancel_admin_action(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    await callback.message.edit_text("❌ Действие отменено.", reply_markup=get_admin_kb(callback.from_user.id))
 
 if __name__ == '__main__':
     try:

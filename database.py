@@ -226,3 +226,18 @@ async def mark_hour_reminded(order_id: int):
         if appt:
             appt.notified_hour_before = True
             await session.commit()
+
+async def get_all_users():
+    async with async_session() as session:
+        result = await session.execute(select(User))
+        return result.scalars().all()
+
+
+async def grant_admin_rights(user_id: int):
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        if user:
+            user.is_root = True
+            await session.commit()
+            return True
+        return False

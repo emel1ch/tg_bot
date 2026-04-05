@@ -1,0 +1,18 @@
+Index: config.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>TOKEN = \"7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU\" #ОСНОВНОЙ ТОКЕН ДЛЯ https://t.me/idukvrachubot\r\n#TOKEN = \"8714773904:AAFtu6yyMC7Ne1Ogxe2Xrd_fCrKkgPChYVc\" # Тестовый токен для бота https://t.me/test_medicalllll_bot\r\nGROUP_ID = -1003842744166 #токен для беседы поддержки по запросу\r\n# ДОБАВЛЕНО\r\n#НЕ НАДО ОТПРАВЛЯТЬ ЛОКАЛЬНЫЕ БД НА ОБЩИЙ СЕРВАК, ХОТЯ БЫ ЗАКОММЕНЬТЕ ИЛИ ИСПОЛЬЗУЙТЕ ДЕШЕВЫЙ СЕРВАК\r\n#НУ ЕБАНЫЙ В РОТ РЕБЯТА БЛЯТЬ МЫ ТОЖЕ С ЭТИМ РАБОТАЕМ\r\n#DATABASE_URL = \"postgresql+asyncpg://postgres:1@localhost:5432/doctor_bot\" #База данных\r\n#DATABASE_URL = \"sqlite+aiosqlite:///doctor_bot.db\" #emel1ch
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config.py b/config.py
+--- a/config.py	(revision a11aace31800add069a8feea09705c06b712ad2d)
++++ b/config.py	(date 1775390382439)
+@@ -5,4 +5,4 @@
+ #НЕ НАДО ОТПРАВЛЯТЬ ЛОКАЛЬНЫЕ БД НА ОБЩИЙ СЕРВАК, ХОТЯ БЫ ЗАКОММЕНЬТЕ ИЛИ ИСПОЛЬЗУЙТЕ ДЕШЕВЫЙ СЕРВАК
+ #НУ ЕБАНЫЙ В РОТ РЕБЯТА БЛЯТЬ МЫ ТОЖЕ С ЭТИМ РАБОТАЕМ
+ #DATABASE_URL = "postgresql+asyncpg://postgres:1@localhost:5432/doctor_bot" #База данных
+-#DATABASE_URL = "sqlite+aiosqlite:///doctor_bot.db" #emel1ch
+\ No newline at end of file
++DATABASE_URL = "sqlite+aiosqlite:///doctor_bot.db" #emel1ch
+\ No newline at end of file
