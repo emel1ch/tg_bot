@@ -1,6 +1,7 @@
 import React from 'react'
 import ScenarioCard from '../components/ScenarioCard'
 
+
 function ToothIcon({ width = 32, height = 32, style = {} }) {
   return (
     <svg
