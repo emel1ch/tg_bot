@@ -6,14 +6,11 @@
   </component>
   <component name="DBNavigator.Project.DataEditorManager">
     <record-view-column-sorting-type value="BY_INDEX" />
-    <value-preview-text-wrapping value="true" />
+    <value-preview-text-wrapping value="false" />
     <value-preview-pinned value="false" />
   </component>
   <component name="DBNavigator.Project.DatabaseAssistantManager">
     <assistants>
-      <assistant-state connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" assistant-type="SELECT_AI" default-profile-name="" selected-chat-id="" availability="UNAVAILABLE" acknowledgement="NONE">
-        <tools />
-      </assistant-state>
       <assistant-state connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" assistant-type="PUBLIC" default-profile-name="" selected-chat-id="F4956F0A5F1845B5A426A36F388F6AE5" availability="AVAILABLE" acknowledgement="ENGAGED" selected="true">
         <chats>
           <chat id="F4956F0A5F1845B5A426A36F388F6AE5" title="" session-signature="" timestamp="1775392739115">
@@ -21,6 +18,9 @@
             <context provider="" profile="" model="" action="" interactive="true" />
           </chat>
         </chats>
+        <tools />
+      </assistant-state>
+      <assistant-state connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" assistant-type="SELECT_AI" default-profile-name="" selected-chat-id="" availability="UNAVAILABLE" acknowledgement="NONE">
         <tools />
       </assistant-state>
     </assistants>
@@ -31,12 +31,12 @@
   <component name="DBNavigator.Project.DatabaseBrowserManager">
     <autoscroll-to-editor value="false" />
     <autoscroll-from-editor value="true" />
-    <show-object-properties value="true" />
+    <show-object-properties value="false" />
     <loaded-nodes />
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c">
-      <console name="Connection" type="STANDARD" schema="doctor_bot" session="Main" />
+      <console name="Connection" type="STANDARD" schema="doctor_bot" session="Main"><![CDATA[DROP TABLE appointments;]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -50,6 +50,14 @@
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" />
+  </component>
+  <component name="DBNavigator.Project.DatasetFilterManager">
+    <filter-actions connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" dataset="public.users" active-filter-id="" />
+    <filter-actions connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" dataset="public.appointments" active-filter-id="" />
+    <filter-actions connection-id="2b23f9fe-40a4-498e-9202-dfbc62f4c30c" dataset="public.doctors" active-filter-id="" />
+  </component>
+  <component name="DBNavigator.Project.ExecutionManager">
+    <retain-sticky-names value="false" />
   </component>
   <component name="DBNavigator.Project.ObjectQuickFilterManager">
     <last-used-operator value="EQUAL" />
@@ -68,7 +76,7 @@
           <driver-library value="" />
           <driver value="" />
           <url-type value="DATABASE" />
-          <host value="localhost" />
+          <host value="77.221.143.122" />
           <port value="5432" />
           <database value="doctor_bot" />
           <tns-folder value="" />
@@ -111,7 +119,7 @@
           <session-management value="true" />
           <ddl-file-binding value="true" />
           <database-logging value="true" />
-          <connect-automatically value="true" />
+          <connect-automatically value="false" />
           <restore-workspace value="true" />
           <restore-workspace-deep value="false" />
           <environment-type value="default" />
@@ -608,5 +616,9 @@
         </visibility-settings>
       </environment>
     </general-settings>
+  </component>
+  <component name="DBNavigator.Project.StatementExecutionManager">
+    <execution-variables />
+    <execution-variable-types />
   </component>
 </project>
