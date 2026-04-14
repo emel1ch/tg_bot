@@ -139,7 +139,7 @@ export default function Slider({ slides = [] }) {
               }}
             >
               <p
-                className="whitespace-normal break-words text-slate-700"
+                className="whitespace-normal wrap-break-word text-slate-700"
                 style={{
                   fontSize: `${SLIDER_UI.textBox.fontSize}px`,
                   lineHeight: `${SLIDER_UI.textBox.lineHeight}px`,
@@ -153,8 +153,8 @@ export default function Slider({ slides = [] }) {
       </div>
 
       <div className="w-full flex-1" />
-      <div className="w-full flex justify-center px-4 my-">
-        <div className="w-[95%] h-[2px] bg-[#8ADFD9] opacity-60"></div>
+      <div className="w-full flex justify-center px-4">
+        <div className="w-[95%] h-0.5 bg-[#8ADFD9] opacity-60"></div>
       </div>
 
 

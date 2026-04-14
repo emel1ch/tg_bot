@@ -120,8 +120,8 @@ export default function ScenarioCard({
             >
               <button
                 type="button"
-                onClick={onClick}
-                className={footerRightClassName}
+                onClick={() => onClick?.()}
+                className={`${footerRightClassName} cursor-pointer`}
                 style={footerRightStyle}
               >
                 {footerRightIcon}

@@ -1,4 +1,4 @@
-import React from 'react'
+
 import ScenarioCard from '../components/ScenarioCard'
 
 
@@ -87,9 +87,10 @@ function SyringeIcon({ width = 32, height = 32, style = {} }) {
   )
 }
 
-function CartIcon({ width = 16, height = 16, style = {} }) {
+function CartIcon({ width = 16, height = 16, style = {}, className = '' }) {
   return (
     <svg
+      className={className}
       viewBox="0 0 24 24"
       width={width}
       height={height}
@@ -117,7 +118,7 @@ function CartIcon({ width = 16, height = 16, style = {} }) {
   )
 }
 
-export default function Home({ onNavigate }) {
+export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = false }) {
   const dentistCard = {
     width: 440,
     height: 270,
@@ -174,7 +175,7 @@ export default function Home({ onNavigate }) {
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">
               Выберите направление подготовки
             </h1>
-            <p className="mx-auto mt-4 max-w-[480px] text-center text-sm leading-6 text-slate-500">
+            <p className="mx-auto mt-4 max-w-120 text-center text-sm leading-6 text-slate-500">
               Каждое направление содержит в себе набор адаптационных материалов: мультфильм, социальная история, игра-тренажер и рекомендации для родителей
             </p>
           </div>
@@ -187,7 +188,7 @@ export default function Home({ onNavigate }) {
               width={dentistCard.width}
               height={dentistCard.height}
               icon={
-                <div className="flex h-full w-full items-center justify-center rounded-[18px] bg-[#D9FBF7] text-[#14B8A6]">
+                <div className="flex h-full w-full items-center justify-center rounded-[18px] bg-dentist-bg text-primary">
                   <ToothIcon width={34} height={34} />
                 </div>
               }
@@ -196,47 +197,62 @@ export default function Home({ onNavigate }) {
                 height: '66px',
               }}
               iconWrapStyle={{
-                top: '30px',
-                left: '30px',
+                top: '5px',
+                left: '10px',
               }}
               title="Поход к стоматологу"
               subtitle="Подготовка к визиту стоматолога"
               materialsText="4 материала"
               titleWrapStyle={{
-                top: '40px',
-                left: '30px',
+                top: '10px',
+                left: '10px',
               }}
               subtitleWrapStyle={{
-                top: '45px',
-                left: '30px',
+                top: '13px',
+                left: '10px',
               }}
               materialsWrapStyle={{
-                top: '55px',
-                left: '30px',
+                top: '18px',
+                left: '10px',
               }}
+
               footerLeft={
-                <div className={dentistBadgeClass}>69 ₽</div>
+                dentistUnlocked ? (
+                  <div className={freeBadgeClass}>Доступ открыт</div>
+                ) : (
+                  <div className={dentistBadgeClass}>69 ₽</div>
+                )
               }
               footerLeftWrapStyle={{
-                top: '-30px',
-                left: '30px',
+                top: '10px',
+                left: '10px',
               }}
-              footerRightLabel="Купить"
-              footerRightIcon={<CartIcon className="text-white" />}
-              footerRightClassName={paidButtonClass}
-              footerRightStyle={{ color: '#fff',borderRadius: '12px', padding: '12px 20px', }}
+              footerRightLabel={dentistUnlocked ? 'Начать' : 'Купить'}
+              footerRightIcon={dentistUnlocked ? null : <CartIcon className="text-white" />}
+              footerRightClassName={dentistUnlocked ? freeButtonClass : paidButtonClass}
+              footerRightStyle={{
+                color: '#fff',
+                borderRadius: '12px',
+                padding: dentistUnlocked ? '12px 24px' : '12px 20px',
+              }}
               footerRightWrapStyle={{
-                top: '-30px',
-                left: '-30px',
+                top: '0px',
+                left: '-5px',
               }}
-              onClick={() => onNavigate('dentist-paid')}
+              onClick={() => {
+                if (dentistUnlocked) {
+                  onNavigate('adaptation-dentist')
+                } else {
+                  onOpenDentistPay?.()
+                }
+              }}     
             />
 
             <ScenarioCard
               width={bloodCard.width}
               height={bloodCard.height}
               icon={
-                <div className="flex h-full w-full items-center justify-center rounded-[18px] bg-[#D9FBF7] text-[#14B8A6]">
+                <div className="flex h-full w-full items-center justify-center rounded-[18px] bg-dentist-bg text-primary">
                   <SyringeIcon width={34} height={34} />
                 </div>
               }
@@ -245,23 +261,23 @@ export default function Home({ onNavigate }) {
                 height: '66px',
               }}
               iconWrapStyle={{
-                top: '30px',
-                left: '30px',
+                top: '5px',
+                left: '10px',
               }}
               title="Сдача анализа крови"
               subtitle="Подготовка к процедуре забора крови"
               materialsText="3 материала"
               titleWrapStyle={{
-                top: '40px',
-                left: '30px',
+                top: '10px',
+                left: '10px',
               }}
               subtitleWrapStyle={{
-                top: '45px',
-                left: '30px',
+                top: '13px',
+                left: '10px',
               }}
               materialsWrapStyle={{
-                top: '55px',
-                left: '30px',
+                top: '18px',
+                left: '10px',
               }}
               footerLeft={
                 <div className={freeBadgeClass}
@@ -274,8 +290,8 @@ export default function Home({ onNavigate }) {
                 >Бесплатно</div>
               }
               footerLeftWrapStyle={{
-                top: '-20px',
-                left: '30px',
+                top: '0px',
+                left: '10px',
               }}
               footerRightLabel="Начать"
               // footerRightIcon={<SyringeIcon width={16} height={16} style={{ color: 'white' }} />}
@@ -283,8 +299,8 @@ export default function Home({ onNavigate }) {
               footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: '12px 24px',}}
               footerRightWrapStyle={{
                 
-                top: '-20px',
-                left: '-30px',
+                top: '0px',
+                left: '-5px',
               }}
               onClick={() => onNavigate('adaptation')}
             />

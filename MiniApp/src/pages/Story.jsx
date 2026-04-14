@@ -35,8 +35,8 @@ const STORY_UI = {
 
 export default function Story({ onBack }) {
   return (
-    <div className="min-h-[100dvh] w-full bg-[#FFFEFA] px-4 py-5">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col">
+    <div className="min-h-dvh w-full bg-[#FFFEFA] px-4 py-5">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
         <div
           className="relative w-full"
           style={{
@@ -102,7 +102,7 @@ export default function Story({ onBack }) {
           Социстория “Сдача крови”
         </h1>
 
-        <div className="mt-[35px] flex flex-1 min-h-0 flex-col">
+        <div className="mt-8.75 flex flex-1 min-h-0 flex-col">
           <Slider slides={bloodSlides} />
         </div>
       </div>

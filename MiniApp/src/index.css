@@ -1,39 +1,27 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-/* webapp/src/index.css */
-body {
-  margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  background: #fafafa;
-  color: #222;
-}
-.container {
-  max-width: 420px;
-  margin: 0 auto;
-  padding: 16px;
-}
-button {
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid #bbb;
-  background: #fff;
-  cursor: pointer;
-}
-button:disabled { opacity: 0.6; cursor: not-allowed; }
-h1, h2 { margin: 8px 0; }
+@import "tailwindcss";
 
-/*Функция которая создает типа пролет главной страницы заглавной */
+@theme {
+  --color-primary: #14B8A6;
+  --color-dentist-bg: #D9FBF7;
+  --color-blood-bg: #FFE4E6;
+  --color-card-border: #E2E8F0;
+  --font-sans: "Inter", "Arial", sans-serif;
+}
+
+@layer base {
+  h1, h2, p { @apply m-0 p-0; }
+
+  button {
+    @apply border-none p-0 m-0 bg-transparent cursor-pointer outline-none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 @keyframes flyUp {
-  0%   { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(-120vh); opacity: 0; } /* ровный линейный ход вверх */
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-120vh); opacity: 0; }
 }
 
-/* класс, который применяет анимацию */
 .fly-up {
-  animation-name: flyUp;
-  animation-timing-function: linear;              /* <- ровная скорость */
-  animation-fill-mode: forwards;
-  animation-duration: var(--fly-dur, 700ms);      /* длительность можно задавать через --fly-dur */
+  animation: flyUp var(--fly-dur, 700ms) linear forwards;
 }
