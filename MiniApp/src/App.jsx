@@ -10,7 +10,6 @@ import PaySheetDentist from './components/PaySheetDentist'
 import AdaptationDentist from './pages/AdaptationDentist'
 import StoryDentist from './pages/StoryDentist'
 import GameLinkDentist from './pages/GameLinkDentist'
-import VideoPlayerDentist from './pages/VideoPlayerDentist'
 import RecommendationsDentist from './pages/RecommendationsDentist'
 
 import { DENTIST_PROMOS } from './data/dentistConfig'
@@ -149,10 +148,6 @@ export default function App() {
 
         {route === 'game-dentist' && (
           <GameLinkDentist onBack={() => setRoute('adaptation-dentist')} />
-        )}
-
-        {route === 'video-dentist' && (
-          <VideoPlayerDentist onBack={() => setRoute('adaptation-dentist')} />
         )}
 
         {route === 'recommendations-dentist' && (

@@ -7,7 +7,7 @@ export const DENTIST_PRICE = 69
 export const DENTIST_PROMOS = ['DENTISTFREE']
 
 export const DENTIST_GAME_URL = 'https://example.com'
-export const DENTIST_VIDEO_URL = 'https://example.com'
+export const DENTIST_VIDEO_URL = 'https://rutube.ru/video/private/ed02a8fd70e1c94fc4757ce31bb84bcc/?p=tPToE79p2R8lRMYapilT0Q'
 
 export const DENTIST_MATERIALS = [
   {
@@ -25,8 +25,8 @@ export const DENTIST_MATERIALS = [
   {
     id: 'video',
     title: 'Видео',
-    description: 'Переход на внешний сайт',
-    route: 'video-dentist',
+    description: 'Сразу открывает внешнюю ссылку',
+    href: DENTIST_VIDEO_URL,
   },
   {
     id: 'info',

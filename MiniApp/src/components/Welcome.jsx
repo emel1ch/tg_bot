@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import welcomeImg from '../assets/welcome.png'
+import bottomWelcomeImg from '../assets/Logo.png'
 
 export default function Welcome({
   onFinish = () => {},
@@ -11,10 +12,16 @@ export default function Welcome({
   flyDuration = 700,
   imgClass = 'w-full max-w-md h-[55vh] object-contain',
   imgStyle = {},
-  titleClass = 'text-2xl sm:text-3xl font-semibold tracking-tight text-[#1E7F7A] mb-3',
+  bottomImageSrc = bottomWelcomeImg,
+  bottomImageAlt = 'Иду к врачу',
+  bottomImageClass = 'w-full max-w-[110px] h-auto object-contain mt-10',
+  bottomImageStyle = {},
+  titleClass = 'text-3xl sm:text-3xl font-semibold tracking-tight text-[#0E7490] mb-3',
   subtitleClass = 'text-sm text-[#4B6F6D]',
   containerClass = 'min-h-screen overflow-hidden flex items-center justify-center bg-[#FFFEFA] px-4',
   containerStyle = {},
+  leftBubbleStyle = {},
+  rightBubbleStyle = {},
 }) {
   const [fly, setFly] = useState(false)
   const finishedRef = useRef(false)
@@ -43,10 +50,34 @@ export default function Welcome({
 
   const animationVar = { '--fly-dur': `${flyDuration}ms` }
 
+  const leftCircle = {
+    left: '-7rem',
+    top: '8rem',
+    width: '16rem',
+    height: '16rem',
+    opacity: 0.28,
+    ...leftBubbleStyle,
+  }
+
+  const rightCircle = {
+    right: '-15.5rem',
+    bottom: '-6rem',
+    width: '33rem',
+    height: '33rem',
+    opacity: 0.24,
+    ...rightBubbleStyle,
+  }
+
   return (
     <div className={`${containerClass} relative isolate`} style={containerStyle}>
-      <div className="pointer-events-none absolute -left-10 -top-10 z-0 h-28 w-28 rounded-full bg-[#73D8D0] opacity-70 blur-[1px]" />
-      <div className="pointer-events-none absolute -bottom-16 -right-16 z-0 h-56 w-56 rounded-full bg-[#5ECFC6] opacity-55 blur-[1px]" />
+      <div
+        className="pointer-events-none absolute z-0 rounded-full bg-[#A8E6E1] blur-[0.5px]"
+        style={leftCircle}
+      />
+      <div
+        className="pointer-events-none absolute z-0 rounded-full bg-[#A8E6E1] blur-[0.5px]"
+        style={rightCircle}
+      />
 
       <div
         className={`relative z-10 w-full max-w-3xl text-center ${fly ? 'fly-up' : ''}`}
@@ -59,12 +90,26 @@ export default function Welcome({
         )}
 
         <div className="my-5 flex justify-center">
-          <img src={welcomeImg} alt="welcome" className={imgClass} style={imgStyle} />
+          <img
+            src={welcomeImg}
+            alt="welcome"
+            className={imgClass}
+            style={imgStyle}
+          />
+        </div>
+
+        <div className="my-3 flex justify-center">
+          <img
+            src={bottomImageSrc}
+            alt={bottomImageAlt}
+            className={bottomImageClass}
+            style={bottomImageStyle}
+          />
         </div>
 
         {titlePosition === 'bottom' && <h1 className={titleClass}>{titleText}</h1>}
 
-        {subtitlePosition === 'bottom' && (
+        {subtitlePosition === 'bottom' && !bottomImageSrc && (
           <div className={subtitleClass}>{subtitleText}</div>
         )}
       </div>
