@@ -1,7 +1,7 @@
-// src/pages/Adaptation.jsx
+// webapp/src/pages/AdaptationBlood.jsx
 import React from 'react';
 
-// ----- Иконки -----
+// ----- Иконки (те же, что в Adaptation.jsx) -----
 function VideoIcon({ width = 24, height = 24 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -59,30 +59,13 @@ function PlayIcon({ width = 16, height = 16 }) {
   );
 }
 
-function PdfIcon({ width = 28, height = 28 }) {
-  return (
-    <div style={{
-      width: width,
-      height: height,
-      backgroundColor: '#14B8A6',
-      borderRadius: '10px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}>
-      <svg width={width * 0.65} height={height * 0.65} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M14 2H6C5.5 2 5 2.5 5 3V21C5 21.5 5.5 22 6 22H18C18.5 22 19 21.5 19 21V7L14 2Z" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
-        <path d="M14 2V7H19" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
-        <path d="M9 15H15" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
-        <path d="M9 18H13" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
-      </svg>
-    </div>
-  );
-}
+// Для крови не нужны рекомендации, поэтому иконку PDF можно не включать, но если нужна – добавьте.
 
-export default function Adaptation({ onNavigate, onBack }) {
-  const RUTUBE_URL = 'https://rutube.ru/video/private/ed02a8fd70e1c94fc4757ce31bb84bcc/?p=tPToE79p2R8lRMYapilT0Q';
-  const GAME_URL = 'https://example.com/your-game';
+export default function AdaptationBlood({ onNavigate, onBack }) {
+  // Ссылки для крови – замените на реальные
+  const BLOOD_VIDEO_URL = 'https://rutube.ru/video/private/ваша_ссылка_на_видео_крови';
+  const BLOOD_GAME_URL = 'https://example.com/blood-game';
+  const BLOOD_STORY_URL = 'story'; // используем существующую историю (bloodSlides)
 
   const handleLinkClick = (url) => {
     const tg = window.Telegram?.WebApp;
@@ -97,53 +80,55 @@ export default function Adaptation({ onNavigate, onBack }) {
     {
       kind: 'video',
       title: 'Мультфильм',
-      subtitle: 'Иду к стоматологу',
+      subtitle: 'Иду сдавать кровь из вены',
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <VideoIcon width={28} height={28} />,
-      onClick: () => handleLinkClick(RUTUBE_URL),
+      onClick: () => handleLinkClick(BLOOD_VIDEO_URL),
       isSpecial: false,
     },
     {
       kind: 'story',
       title: 'Социальная история',
-      subtitle: 'Иду к стоматологу',
+      subtitle: 'Иду сдавать кровь из вены',
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <BookIcon width={28} height={28} />,
-      onClick: () => onNavigate('story-dentist'),   // ← правильный переход на историю стоматолога
+      onClick: () => onNavigate('story'), // здесь используется существующая история крови (bloodSlides)
       isSpecial: false,
     },
     {
       kind: 'game',
       title: 'Игра-тренажёр',
-      subtitle: 'Иду к стоматологу',
-      desc: 'Закрепление полученных навыков в игровую практику',
+      subtitle: 'Иду сдавать кровь из вены',
+      desc: 'Закрепление полученных навыков через игровую практику',
       time: '4 мин',
       icon: <JoystickIcon width={32} height={32} />,
-      onClick: () => handleLinkClick(GAME_URL),
+      onClick: () => handleLinkClick(BLOOD_GAME_URL),
       isSpecial: false,
     },
-    {
-  kind: 'info',
-  title: 'Рекомендации для родителей',
-  subtitle: 'Подготовка к стоматологической помощи детей с РАС',
-  desc: 'Полные методические рекомендации по подготовке ребенка к визиту к стоматологу: общие советы и специальные приемы',
-  // время не указываем (как на фото)
-  icon: <PdfIcon width={28} height={28} />,
-  onClick: () => onNavigate('recommendations-dentist'),
-  isSpecial: true,
-}
+    // Если нужны рекомендации для крови – раскомментируйте и измените текст
+    // {
+    //   kind: 'info',
+    //   title: 'Рекомендации для родителей',
+    //   subtitle: 'Подготовка к процедуре забора крови',
+    //   desc: 'Полные методические рекомендации по',
+    //   time: 'PDF',
+    //   icon: <PdfIcon width={28} height={28} />,
+    //   onClick: () => onNavigate('info'),
+    //   isSpecial: true,
+    // },
   ];
 
   const cardBorderColor = '#7EC8E3';
   const primaryColor = '#14B8A6';
   const normalCardBg = '#FFFFFF';
-  const specialCardBg = '#FFF9F2';
+  const specialCardBg = '#FFF9F2'; // если будет карточка рекомендаций
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px 16px' }}>
+        {/* Шапка */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <button
             onClick={onBack}
@@ -171,12 +156,14 @@ export default function Adaptation({ onNavigate, onBack }) {
             borderRadius: '9999px',
             textAlign: 'center',
           }}>
-            Поход к стоматологу
+            Сдача анализа крови   {/* ← изменено */}
           </div>
         </div>
+
         <h3 style={{ fontSize: '19px', fontWeight: '700', color: '#1f2937', marginTop: '4px', marginBottom: '20px' }}>
           Материалы для адаптации
         </h3>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {materials.map((item) => (
             <div
