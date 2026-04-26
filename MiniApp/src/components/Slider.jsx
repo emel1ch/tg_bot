@@ -7,8 +7,8 @@ const SLIDER_UI = {
     radius: 28,
   },
   imageBox: {
-    width: 300,
-    height: 280,
+    width: 380,
+    height: 380,
     radius: 24,
   },
   textBox: {
@@ -132,14 +132,14 @@ export default function Slider({ slides = [] }) {
                 paddingRight: `${SLIDER_UI.textBox.paddingX}px`,
                 paddingTop: `${SLIDER_UI.textBox.paddingY}px`,
                 paddingBottom: `${SLIDER_UI.textBox.paddingY}px`,
-                backgroundColor: '#DDF7F6',
+                backgroundColor: 'transparent',
                 borderStyle: 'solid',
                 borderWidth: `${SLIDER_UI.textBox.borderWidth}px`,
                 borderColor: SLIDER_UI.textBox.borderColor,
               }}
             >
               <p
-                className="whitespace-normal wrap-break-word text-slate-700"
+                className="break-words text-slate-700"
                 style={{
                   fontSize: `${SLIDER_UI.textBox.fontSize}px`,
                   lineHeight: `${SLIDER_UI.textBox.lineHeight}px`,
@@ -154,9 +154,8 @@ export default function Slider({ slides = [] }) {
 
       <div className="w-full flex-1" />
       <div className="w-full flex justify-center px-4">
-        <div className="w-[95%] h-0.5 bg-[#8ADFD9] opacity-60"></div>
+        <div className="h-0.5 w-[95%] bg-[#8ADFD9] opacity-60" />
       </div>
-
 
       <div
         className="flex items-center justify-between gap-4"
