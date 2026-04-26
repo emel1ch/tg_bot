@@ -1,11 +1,15 @@
-TOKEN = "7975904976:AAESTV8fzF1m5noQs-gkjAQbyD9AxvFhHJU" #ОСНОВНОЙ ТОКЕН ДЛЯ https://t.me/idukvrachubot
-#TOKEN = "8714773904:AAFtu6yyMC7Ne1Ogxe2Xrd_fCrKkgPChYVc" # Тестовый токен для бота https://t.me/test_medicalllll_bot
-GROUP_ID = -1003842744166 #токен для беседы поддержки по запросу
-# ДОБАВЛЕНО
-#НЕ НАДО ОТПРАВЛЯТЬ ЛОКАЛЬНЫЕ БД НА ОБЩИЙ СЕРВАК, ХОТЯ БЫ ЗАКОММЕНЬТЕ ИЛИ ИСПОЛЬЗУЙТЕ ДЕШЕВЫЙ СЕРВАК
-#НУ ЕБАНЫЙ В РОТ РЕБЯТА БЛЯТЬ МЫ ТОЖЕ С ЭТИМ РАБОТАЕМ
-#DATABASE_URL = "postgresql+asyncpg://postgres:1@localhost:5432/doctor_bot" #База данных
-#DATABASE_URL = "sqlite+aiosqlite:///doctor_bot.db" #emel1ch
-DATABASE_URL = "postgresql+asyncpg://db_admin:Qwerty12345@77.221.143.122:5432/doctor_bot"
-# bilol
-SUPERADMIN_ID = 1371986583
+import os
+from dotenv import load_dotenv
+
+# Загружаем .env
+load_dotenv()
+
+# Читаем переменные
+TOKEN = os.getenv("TOKEN")
+GROUP_ID = int(os.getenv("GROUP_ID"))
+DATABASE_URL = os.getenv("DATABASE_URL")
+SUPERADMIN_ID = int(os.getenv("SUPERADMIN_ID"))
+
+# Проверка (очень полезно)
+if not TOKEN:
+    raise ValueError("TOKEN не найден в .env")
