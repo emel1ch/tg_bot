@@ -9,9 +9,9 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from config import TOKEN, GROUP_ID
-from config import TOKEN
-from config import SUPERADMIN_ID
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
 from aiogram.filters import CommandObject
 from database import get_all_users, grant_admin_rights
 from database import (
@@ -34,7 +34,14 @@ from database import (
     add_doctor_exception,
 )
 
-bot = Bot(token=TOKEN)
+# 2. Создаем кастомный сервер API
+custom_server = TelegramAPIServer.from_base(WORKER_URL)
+
+# 3. Подключаем этот сервер к aiohttp сессии
+session = AiohttpSession(api=custom_server)
+
+# 4. Инициализируем бота с этой сессией
+bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
 
@@ -790,7 +797,9 @@ async def on_startup(bot: Bot, **kwargs):
 dp.startup.register(on_startup)
 
 async def main():
-    print("Бот запускается...")
+    print("Запуск бота через прокси Cloudflare...")
+    # Сбрасываем вебхуки на всякий случай и запускаем поллинг
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 async def seed_doctors_if_empty():
