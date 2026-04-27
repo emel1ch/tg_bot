@@ -34,14 +34,7 @@ from database import (
     add_doctor_exception,
 )
 
-# 2. Создаем кастомный сервер API
-custom_server = TelegramAPIServer.from_base(WORKER_URL)
-
-# 3. Подключаем этот сервер к aiohttp сессии
-session = AiohttpSession(api=custom_server)
-
-# 4. Инициализируем бота с этой сессией
-bot = Bot(token=TOKEN, session=session)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
