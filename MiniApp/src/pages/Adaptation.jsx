@@ -23,12 +23,12 @@ function BookIcon({ width = 24, height = 24 }) {
 function JoystickIcon({ width = 32, height = 32 }) {
   return (
     <svg width={width} height={height} viewBox="0 0 200 190" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="38" y="65" width="124" height="78" rx="24" fill="#E0F7FA" stroke="#14B8A6" strokeWidth="16" />
-      <rect x="68" y="82" width="18" height="32" rx="4" fill="#14B8A6" />
-      <rect x="78" y="72" width="32" height="16" rx="4" fill="#14B8A6" />
-      <circle cx="128" cy="88" r="11" fill="#14B8A6" />
-      <circle cx="150" cy="105" r="11" fill="#14B8A6" />
-      <rect x="80" y="42" width="40" height="26" rx="9" fill="#14B8A6" />
+      <rect x="38" y="65" width="124" height="78" rx="24" fill="#E0F7FA" stroke="#18C6C8" strokeWidth="16" />
+      <rect x="68" y="82" width="18" height="32" rx="4" fill="#18C6C8" />
+      <rect x="78" y="72" width="32" height="16" rx="4" fill="#18C6C8" />
+      <circle cx="128" cy="88" r="11" fill="#18C6C8" />
+      <circle cx="150" cy="105" r="11" fill="#18C6C8" />
+      <rect x="80" y="42" width="40" height="26" rx="9" fill="#18C6C8" />
     </svg>
   );
 }
@@ -59,12 +59,12 @@ function PlayIcon({ width = 16, height = 16 }) {
   );
 }
 
-function PdfIcon({ width = 28, height = 28 }) {
+function DocIcon({ width = 28, height = 28 }) {
   return (
     <div style={{
       width: width,
       height: height,
-      backgroundColor: '#14B8A6',
+      backgroundColor: '#18C6C8',
       borderRadius: '10px',
       display: 'flex',
       alignItems: 'center',
@@ -86,11 +86,8 @@ export default function Adaptation({ onNavigate, onBack }) {
 
   const handleLinkClick = (url) => {
     const tg = window.Telegram?.WebApp;
-    if (tg?.openLink) {
-      tg.openLink(url);
-      return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (tg?.openLink) tg.openLink(url);
+    else window.open(url, '_blank');
   };
 
   const materials = [
@@ -111,7 +108,7 @@ export default function Adaptation({ onNavigate, onBack }) {
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <BookIcon width={28} height={28} />,
-      onClick: () => onNavigate('story-dentist'),   // ← правильный переход на историю стоматолога
+      onClick: () => onNavigate('story-dentist'),
       isSpecial: false,
     },
     {
@@ -125,21 +122,17 @@ export default function Adaptation({ onNavigate, onBack }) {
       isSpecial: false,
     },
     {
-  kind: 'info',
-  title: 'Рекомендации для родителей',
-  subtitle: 'Подготовка к стоматологической помощи детей с РАС',
-  desc: 'Полные методические рекомендации по подготовке ребенка к визиту к стоматологу: общие советы и специальные приемы',
-  // время не указываем (как на фото)
-  icon: <PdfIcon width={28} height={28} />,
-  onClick: () => onNavigate('recommendations-dentist'),
-  isSpecial: true,
-}
+      kind: 'info',
+      title: 'Рекомендации для родителей',
+      subtitle: 'Подготовка к стоматологической помощи детей с РАС',
+      desc: 'Полные методические рекомендации по подготовке ребенка к визиту к стоматологу: общие советы и специальные приемы',
+      icon: <DocIcon width={28} height={28} />,
+      onClick: () => onNavigate('recommendations-dentist'),
+      isSpecial: true,
+    },
   ];
 
-  const cardBorderColor = '#7EC8E3';
-  const primaryColor = '#14B8A6';
-  const normalCardBg = '#FFFFFF';
-  const specialCardBg = '#FFF9F2';
+  const primaryColor = '#18C6C8';   // единый бирюзовый цвет
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
@@ -174,17 +167,19 @@ export default function Adaptation({ onNavigate, onBack }) {
             Поход к стоматологу
           </div>
         </div>
+
         <h3 style={{ fontSize: '19px', fontWeight: '700', color: '#1f2937', marginTop: '4px', marginBottom: '20px' }}>
           Материалы для адаптации
         </h3>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {materials.map((item) => (
             <div
               key={item.kind}
               style={{
-                backgroundColor: item.isSpecial ? specialCardBg : normalCardBg,
+                backgroundColor: item.isSpecial ? '#E6F7EC' : '#FFFFFF',
                 borderRadius: '22px',
-                border: `2px solid ${cardBorderColor}`,
+                border: `2px solid ${primaryColor}`,
                 padding: '16px',
               }}
             >
@@ -198,22 +193,25 @@ export default function Adaptation({ onNavigate, onBack }) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#11B8C5',
+                    color: primaryColor,
                     flexShrink: 0,
                   }}
                 >
                   {item.icon}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1f2937' }}>{item.title}</div>
-                  <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px' }}>{item.subtitle}</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '16px', color: primaryColor }}>{item.title}</div>
+                  <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px', fontWeight: '600' }}>{item.subtitle}</div>
                   <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '2px' }}>{item.desc}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
-                    <ClockIcon />
-                    <span style={{ fontSize: '12px' }}>{item.time}</span>
-                  </div>
+                  {item.time && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
+                      <ClockIcon />
+                      <span style={{ fontSize: '12px' }}>{item.time}</span>
+                    </div>
+                  )}
                 </div>
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
                 <button
                   onClick={item.onClick}
@@ -229,11 +227,19 @@ export default function Adaptation({ onNavigate, onBack }) {
                     color: '#ffffff',
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(20, 184, 166, 0.35)',
                   }}
                 >
-                  <PlayIcon />
-                  Начать
+                  {item.kind === 'info' ? (
+                    <>
+                      <BookIcon width={16} height={16} />
+                      Открыть
+                    </>
+                  ) : (
+                    <>
+                      <PlayIcon />
+                      Начать
+                    </>
+                  )}
                 </button>
               </div>
             </div>

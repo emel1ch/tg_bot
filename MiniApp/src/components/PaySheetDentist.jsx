@@ -1,3 +1,4 @@
+// src/components/PaySheetDentist.jsx
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DENTIST_PRICE } from '../data/dentistConfig'
@@ -46,9 +47,7 @@ export default function PaySheetDentist({
 
   useEffect(() => {
     return () => {
-      if (closeTimerRef.current) {
-        window.clearTimeout(closeTimerRef.current)
-      }
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
     }
   }, [])
 
@@ -63,21 +62,16 @@ export default function PaySheetDentist({
 
   const requestClose = () => {
     if (isClosing) return
-
     setIsClosing(true)
     setIsDragging(false)
     setTranslateY(0)
-
     closeTimerRef.current = window.setTimeout(() => {
       resetLocalState()
       onClose?.()
     }, 220)
   }
 
-  const handleClose = () => {
-    requestClose()
-  }
-
+  const handleClose = () => requestClose()
   const handleSuccess = (message) => {
     setStatus(message || '')
     setStatusType('success')
@@ -88,15 +82,10 @@ export default function PaySheetDentist({
   const handleApplyPromo = async () => {
     try {
       const result = await Promise.resolve(
-        onApplyPromo?.(promoCode) ?? {
-          ok: false,
-          message: 'Промокод не подошёл',
-        }
+        onApplyPromo?.(promoCode) ?? { ok: false, message: 'Промокод не подошёл' }
       )
-
       setStatus(result.message || '')
       setStatusType(result.ok ? 'success' : 'error')
-
       if (result.ok) {
         setPromoCode('')
         handleSuccess(result.message || 'Промокод принят')
@@ -114,16 +103,12 @@ export default function PaySheetDentist({
 
   const handlePay = async () => {
     try {
-      const result = await Promise.resolve(
-        onPay?.() ?? { ok: true, message: 'Оплата прошла успешно' }
-      )
-
+      const result = await Promise.resolve(onPay?.() ?? { ok: true, message: 'Оплата прошла успешно' })
       if (result && result.ok === false) {
         setStatus(result.message || 'Оплата не прошла')
         setStatusType('error')
         return
       }
-
       handleSuccess(result?.message || 'Оплата прошла успешно')
     } catch {
       setStatus('Оплата не прошла')
@@ -134,26 +119,16 @@ export default function PaySheetDentist({
   const handlePointerDown = (e) => {
     if (isClosing) return
     if (e.button != null && e.button !== 0) return
-
     const target = e.target
-    if (target instanceof Element) {
-      if (target.closest('input, button, textarea, select, option, a')) return
-    }
-
+    if (target instanceof Element && target.closest('input, button, textarea, select, option, a')) return
     setIsDragging(true)
     dragRef.current.startY = e.clientY
     dragRef.current.deltaY = 0
-
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      // no-op
-    }
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
   }
 
   const handlePointerMove = (e) => {
     if (!isDragging) return
-
     const deltaY = Math.max(0, e.clientY - dragRef.current.startY)
     dragRef.current.deltaY = deltaY
     setTranslateY(deltaY)
@@ -161,15 +136,9 @@ export default function PaySheetDentist({
 
   const handlePointerUp = () => {
     if (!isDragging) return
-
     setIsDragging(false)
-
-    if (dragRef.current.deltaY > 110) {
-      requestClose()
-      return
-    }
-
-    setTranslateY(0)
+    if (dragRef.current.deltaY > 110) requestClose()
+    else setTranslateY(0)
   }
 
   if (!isOpen) return null
@@ -177,9 +146,9 @@ export default function PaySheetDentist({
 
   const courseItems = [
     'Социальная история',
-    'Онлайн-игра',
-    'Мультфильм',
-    'Методические рекомендации',
+    'Онлайн-игра "Иду к стоматологу"',
+    'Мультфильм "Иду к стоматологу"',
+    'Методические рекомендации для родителей',
   ]
 
   const panelTransform = isClosing
@@ -195,10 +164,7 @@ export default function PaySheetDentist({
         className={`relative z-10 w-full max-w-md rounded-t-4xl bg-white px-5 pb-5 pt-3 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] ${
           isDragging ? 'transition-none' : 'transition-transform duration-300 ease-out'
         }`}
-        style={{
-          transform: panelTransform,
-          touchAction: 'none',
-        }}
+        style={{ transform: panelTransform, touchAction: 'none' }}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -207,34 +173,24 @@ export default function PaySheetDentist({
       >
         <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
 
-        <h2 className="text-[26px] font-bold tracking-tight text-slate-900">
-          Покупка доступа
-        </h2>
+        <h2 className="text-[26px] font-bold tracking-tight text-slate-900">Покупка доступа</h2>
         <p className="mt-1 text-sm text-slate-500">Поход к стоматологу</p>
 
-        <div className="mt-5 rounded-3xl bg-teal-50 p-4">
+        <div className="mt-5 rounded-3xl bg-[#E0F7FA] p-4">
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-slate-600">Стоимость курса</span>
-            <span className="text-xl font-bold text-primary">{price} ₽</span>
+            <span className="text-xl font-bold text-[#18C6C8]">{price} ₽</span>
           </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Единоразовая оплата. Доступ навсегда.
-          </div>
+          <div className="mt-2 text-xs text-slate-500">Единоразовая оплата. Доступ навсегда.</div>
         </div>
 
         <div className="mt-5">
-          <div className="text-sm font-semibold text-slate-900">
-            Что входит в курс:
-          </div>
-
+          <div className="text-sm font-semibold text-slate-900">Что входит в курс:</div>
           <ul className="mt-3 space-y-2">
             {courseItems.map((item) => (
-              <li
-                key={item}
-                className="flex items-start gap-2 text-sm text-slate-700"
-              >
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-primary bg-transparent">
-                  <CheckIcon className="h-3.5 w-3.5 text-primary" />
+              <li key={item} className="flex items-start gap-2 text-sm text-slate-700">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#18C6C8] bg-transparent">
+                  <CheckIcon className="h-3.5 w-3.5 text-[#18C6C8]" />
                 </span>
                 <span>{item}</span>
               </li>
@@ -242,8 +198,9 @@ export default function PaySheetDentist({
           </ul>
         </div>
 
+        {/* Поле промокода и кнопка "Применить" – если хотите убрать, закомментируйте этот блок */}
         <form onSubmit={handlePromoSubmit} className="mt-5">
-          <div className="flex items-center gap-2 rounded-2xl bg-teal-50 p-2">
+          <div className="flex items-center gap-2 rounded-2xl bg-[#E0F7FA] p-2">
             <input
               value={promoCode}
               onChange={(e) => setPromoCode(e.target.value)}
@@ -255,7 +212,7 @@ export default function PaySheetDentist({
             />
             <button
               type="submit"
-              className="shrink-0 rounded-xl bg-primary px-4 py-3 text-sm font-medium text-white transition active:scale-[0.98]"
+              className="shrink-0 rounded-xl bg-[#18C6C8] px-4 py-3 text-sm font-medium text-white transition active:scale-[0.98]"
             >
               Применить
             </button>
@@ -263,11 +220,7 @@ export default function PaySheetDentist({
         </form>
 
         {status ? (
-          <p
-            className={`mt-2 text-sm ${
-              statusType === 'error' ? 'text-red-500' : 'text-emerald-600'
-            }`}
-          >
+          <p className={`mt-2 text-sm ${statusType === 'error' ? 'text-red-500' : 'text-emerald-600'}`}>
             {status}
           </p>
         ) : null}
@@ -275,7 +228,7 @@ export default function PaySheetDentist({
         <button
           type="button"
           onClick={handlePay}
-          className="mt-5 w-full rounded-2xl bg-primary px-5 py-4 text-base font-medium text-white transition active:scale-[0.99]"
+          className="mt-5 w-full rounded-2xl bg-[#18C6C8] px-5 py-4 text-base font-medium text-white transition active:scale-[0.99]"
         >
           Оплатить {price} ₽
         </button>

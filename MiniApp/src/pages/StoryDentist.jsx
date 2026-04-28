@@ -1,6 +1,7 @@
-import React from 'react'
-import Slider from '../components/Slider'
-import { dentistSocialStory } from '../data/dentistSocialStory'
+// src/pages/StoryDentist.jsx
+import React from 'react';
+import Slider from '../components/Slider';
+import { dentistSocialStory } from '../data/dentistSocialStory';
 
 const STORY_UI = {
   header: {
@@ -26,12 +27,12 @@ const STORY_UI = {
     },
   },
   title: {
-    fontSize: 22,
+    fontSize: 28,
     marginTop: 18,
     x: 0,
     y: 10,
   },
-}
+};
 
 export default function StoryDentist({ onBack }) {
   return (
@@ -73,22 +74,22 @@ export default function StoryDentist({ onBack }) {
           </button>
 
           <div
-            className="absolute left-1/2 top-0 inline-flex items-center justify-center rounded-full bg-[#18C6C8]"
-            style={{
-              minWidth: `${STORY_UI.header.sectionTag.minWidth}px`,
-              height: `${STORY_UI.header.sectionTag.height}px`,
-              paddingLeft: `${STORY_UI.header.sectionTag.paddingX}px`,
-              paddingRight: `${STORY_UI.header.sectionTag.paddingX}px`,
-              paddingTop: `${STORY_UI.header.sectionTag.paddingY}px`,
-              paddingBottom: `${STORY_UI.header.sectionTag.paddingY}px`,
-              fontSize: `${STORY_UI.header.sectionTag.fontSize}px`,
-              transform: `translate(-50%, 0) translate(${STORY_UI.header.sectionTag.x}px, ${STORY_UI.header.sectionTag.y}px)`,
-              color: '#FFFFFF',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Стоматолог
-          </div>
+  className="absolute left-1/2 top-0 inline-flex items-center justify-center rounded-full bg-[#18C6C8]"
+  style={{
+    minWidth: '148px',
+    height: '44px',
+    paddingLeft: '22px',
+    paddingRight: '22px',
+    paddingTop: '10px',
+    paddingBottom: '10px',
+    fontSize: '17px',
+    transform: 'translate(-50%, 0)',
+    color: '#FFFFFF',
+    whiteSpace: 'nowrap',
+  }}
+>
+  Стоматолог
+</div>
         </div>
 
         <div className="mt-5 -mx-2 px-2">
@@ -109,5 +110,5 @@ export default function StoryDentist({ onBack }) {
         </div>
       </div>
     </div>
-  )
+  );
 }

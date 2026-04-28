@@ -1,7 +1,7 @@
-// webapp/src/pages/AdaptationBlood.jsx
+// src/pages/AdaptationBlood.jsx
 import React from 'react';
 
-// ----- Иконки (те же, что в Adaptation.jsx) -----
+// ----- Иконки (те же, что и в Adaptation.jsx) -----
 function VideoIcon({ width = 24, height = 24 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -10,7 +10,6 @@ function VideoIcon({ width = 24, height = 24 }) {
     </svg>
   );
 }
-
 function BookIcon({ width = 24, height = 24 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -19,20 +18,18 @@ function BookIcon({ width = 24, height = 24 }) {
     </svg>
   );
 }
-
 function JoystickIcon({ width = 32, height = 32 }) {
   return (
     <svg width={width} height={height} viewBox="0 0 200 190" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="38" y="65" width="124" height="78" rx="24" fill="#E0F7FA" stroke="#14B8A6" strokeWidth="16" />
-      <rect x="68" y="82" width="18" height="32" rx="4" fill="#14B8A6" />
-      <rect x="78" y="72" width="32" height="16" rx="4" fill="#14B8A6" />
-      <circle cx="128" cy="88" r="11" fill="#14B8A6" />
-      <circle cx="150" cy="105" r="11" fill="#14B8A6" />
-      <rect x="80" y="42" width="40" height="26" rx="9" fill="#14B8A6" />
+      <rect x="38" y="65" width="124" height="78" rx="24" fill="#E0F7FA" stroke="#18C6C8" strokeWidth="16" />
+      <rect x="68" y="82" width="18" height="32" rx="4" fill="#18C6C8" />
+      <rect x="78" y="72" width="32" height="16" rx="4" fill="#18C6C8" />
+      <circle cx="128" cy="88" r="11" fill="#18C6C8" />
+      <circle cx="150" cy="105" r="11" fill="#18C6C8" />
+      <rect x="80" y="42" width="40" height="26" rx="9" fill="#18C6C8" />
     </svg>
   );
 }
-
 function ClockIcon({ width = 16, height = 16 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -41,7 +38,6 @@ function ClockIcon({ width = 16, height = 16 }) {
     </svg>
   );
 }
-
 function BackIcon({ width = 18, height = 18 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -49,7 +45,6 @@ function BackIcon({ width = 18, height = 18 }) {
     </svg>
   );
 }
-
 function PlayIcon({ width = 16, height = 16 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -59,21 +54,14 @@ function PlayIcon({ width = 16, height = 16 }) {
   );
 }
 
-// Для крови не нужны рекомендации, поэтому иконку PDF можно не включать, но если нужна – добавьте.
-
 export default function AdaptationBlood({ onNavigate, onBack }) {
-  // Ссылки для крови – замените на реальные
   const BLOOD_VIDEO_URL = 'https://rutube.ru/video/private/ваша_ссылка_на_видео_крови';
   const BLOOD_GAME_URL = 'https://example.com/blood-game';
-  const BLOOD_STORY_URL = 'story'; // используем существующую историю (bloodSlides)
 
   const handleLinkClick = (url) => {
     const tg = window.Telegram?.WebApp;
-    if (tg?.openLink) {
-      tg.openLink(url);
-      return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (tg?.openLink) tg.openLink(url);
+    else window.open(url, '_blank');
   };
 
   const materials = [
@@ -85,7 +73,6 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
       time: '4 мин',
       icon: <VideoIcon width={28} height={28} />,
       onClick: () => handleLinkClick(BLOOD_VIDEO_URL),
-      isSpecial: false,
     },
     {
       kind: 'story',
@@ -94,8 +81,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <BookIcon width={28} height={28} />,
-      onClick: () => onNavigate('story'), // здесь используется существующая история крови (bloodSlides)
-      isSpecial: false,
+      onClick: () => onNavigate('story'),
     },
     {
       kind: 'game',
@@ -105,30 +91,14 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
       time: '4 мин',
       icon: <JoystickIcon width={32} height={32} />,
       onClick: () => handleLinkClick(BLOOD_GAME_URL),
-      isSpecial: false,
     },
-    // Если нужны рекомендации для крови – раскомментируйте и измените текст
-    // {
-    //   kind: 'info',
-    //   title: 'Рекомендации для родителей',
-    //   subtitle: 'Подготовка к процедуре забора крови',
-    //   desc: 'Полные методические рекомендации по',
-    //   time: 'PDF',
-    //   icon: <PdfIcon width={28} height={28} />,
-    //   onClick: () => onNavigate('info'),
-    //   isSpecial: true,
-    // },
   ];
 
-  const cardBorderColor = '#7EC8E3';
-  const primaryColor = '#14B8A6';
-  const normalCardBg = '#FFFFFF';
-  const specialCardBg = '#FFF9F2'; // если будет карточка рекомендаций
+  const primaryColor = '#18C6C8';   // единый бирюзовый цвет
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px 16px' }}>
-        {/* Шапка */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <button
             onClick={onBack}
@@ -156,7 +126,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
             borderRadius: '9999px',
             textAlign: 'center',
           }}>
-            Сдача анализа крови   {/* ← изменено */}
+            Сдача анализа крови
           </div>
         </div>
 
@@ -169,9 +139,9 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
             <div
               key={item.kind}
               style={{
-                backgroundColor: item.isSpecial ? specialCardBg : normalCardBg,
+                backgroundColor: '#FFFFFF',
                 borderRadius: '22px',
-                border: `2px solid ${cardBorderColor}`,
+                border: `2px solid ${primaryColor}`,
                 padding: '16px',
               }}
             >
@@ -185,14 +155,15 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#11B8C5',
+                    color: primaryColor,
                     flexShrink: 0,
                   }}
                 >
                   {item.icon}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#1f2937' }}>{item.title}</div>
+                  {/* ЗАГОЛОВОК КАРТОЧКИ – ТЕПЕРЬ БИРЮЗОВЫЙ */}
+                  <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px', fontWeight: '600' }}>{item.subtitle}</div>
                   <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px' }}>{item.subtitle}</div>
                   <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '2px' }}>{item.desc}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
@@ -216,7 +187,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
                     color: '#ffffff',
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(20, 184, 166, 0.35)',
+                    boxShadow: '0 3px 10px rgba(24, 198, 200, 0.35)',
                   }}
                 >
                   <PlayIcon />
