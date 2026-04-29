@@ -59,24 +59,16 @@ function PlayIcon({ width = 16, height = 16 }) {
   );
 }
 
+// Иконка-листочек без собственного фона.
+// Фон задаётся снаружи, в общем контейнере карточки.
 function DocIcon({ width = 28, height = 28 }) {
   return (
-    <div style={{
-      width: width,
-      height: height,
-      backgroundColor: '#18C6C8',
-      borderRadius: '10px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}>
-      <svg width={width * 0.65} height={height * 0.65} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M14 2H6C5.5 2 5 2.5 5 3V21C5 21.5 5.5 22 6 22H18C18.5 22 19 21.5 19 21V7L14 2Z" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
-        <path d="M14 2V7H19" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
-        <path d="M9 15H15" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
-        <path d="M9 18H13" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
-      </svg>
-    </div>
+    <svg width={width} height={height} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 2H6C5.5 2 5 2.5 5 3V21C5 21.5 5.5 22 6 22H18C18.5 22 19 21.5 19 21V7L14 2Z" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
+      <path d="M14 2V7H19" stroke="#ffffff" strokeWidth="1.9" strokeLinejoin="round" />
+      <path d="M9 15H15" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M9 18H13" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -132,7 +124,9 @@ export default function Adaptation({ onNavigate, onBack }) {
     },
   ];
 
-  const primaryColor = '#18C6C8';   // единый бирюзовый цвет
+  const primaryColor = '#18C6C8';
+  const specialBorderColor = '#CCFFEE';
+  const specialBgColor = 'rgba(140, 210, 70, 0.02)';
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
@@ -154,16 +148,19 @@ export default function Adaptation({ onNavigate, onBack }) {
           >
             <BackIcon />
           </button>
-          <div style={{
-            flex: 1,
-            backgroundColor: primaryColor,
-            color: '#ffffff',
-            fontSize: '17px',
-            fontWeight: '600',
-            padding: '12px 16px',
-            borderRadius: '9999px',
-            textAlign: 'center',
-          }}>
+
+          <div
+            style={{
+              flex: 1,
+              backgroundColor: primaryColor,
+              color: '#ffffff',
+              fontSize: '17px',
+              fontWeight: '600',
+              padding: '12px 16px',
+              borderRadius: '9999px',
+              textAlign: 'center',
+            }}
+          >
             Поход к стоматологу
           </div>
         </div>
@@ -177,9 +174,9 @@ export default function Adaptation({ onNavigate, onBack }) {
             <div
               key={item.kind}
               style={{
-                backgroundColor: item.isSpecial ? '#E6F7EC' : '#FFFFFF',
+                backgroundColor: item.isSpecial ? specialBgColor : '#FFFFFF',
                 borderRadius: '22px',
-                border: `2px solid ${primaryColor}`,
+                border: item.isSpecial ? `2px solid ${specialBorderColor}` : `2px solid ${primaryColor}`,
                 padding: '16px',
               }}
             >
@@ -189,20 +186,22 @@ export default function Adaptation({ onNavigate, onBack }) {
                     width: '56px',
                     height: '56px',
                     borderRadius: '18px',
-                    backgroundColor: '#EEFDFD',
+                    backgroundColor: item.isSpecial ? primaryColor : '#EEFDFD',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: primaryColor,
+                    color: item.isSpecial ? '#ffffff' : primaryColor,
                     flexShrink: 0,
                   }}
                 >
                   {item.icon}
                 </div>
+
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 'bold', fontSize: '16px', color: primaryColor }}>{item.title}</div>
                   <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px', fontWeight: '600' }}>{item.subtitle}</div>
                   <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '2px' }}>{item.desc}</div>
+
                   {item.time && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
                       <ClockIcon />

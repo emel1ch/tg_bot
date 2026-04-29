@@ -1,7 +1,7 @@
 // src/pages/AdaptationBlood.jsx
 import React from 'react';
 
-// ----- Иконки (те же, что и в Adaptation.jsx) -----
+// ----- Иконки -----
 function VideoIcon({ width = 24, height = 24 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -10,6 +10,7 @@ function VideoIcon({ width = 24, height = 24 }) {
     </svg>
   );
 }
+
 function BookIcon({ width = 24, height = 24 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -18,6 +19,7 @@ function BookIcon({ width = 24, height = 24 }) {
     </svg>
   );
 }
+
 function JoystickIcon({ width = 32, height = 32 }) {
   return (
     <svg width={width} height={height} viewBox="0 0 200 190" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -30,6 +32,7 @@ function JoystickIcon({ width = 32, height = 32 }) {
     </svg>
   );
 }
+
 function ClockIcon({ width = 16, height = 16 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -38,6 +41,7 @@ function ClockIcon({ width = 16, height = 16 }) {
     </svg>
   );
 }
+
 function BackIcon({ width = 18, height = 18 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -45,6 +49,7 @@ function BackIcon({ width = 18, height = 18 }) {
     </svg>
   );
 }
+
 function PlayIcon({ width = 16, height = 16 }) {
   return (
     <svg viewBox="0 0 24 24" width={width} height={height} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -68,7 +73,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
     {
       kind: 'video',
       title: 'Мультфильм',
-      subtitle: 'Иду сдавать кровь из вены',
+      subtitle: 'Короткое видео о том, как проходит сдача крови',
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <VideoIcon width={28} height={28} />,
@@ -77,7 +82,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
     {
       kind: 'story',
       title: 'Социальная история',
-      subtitle: 'Иду сдавать кровь из вены',
+      subtitle: 'История с понятными картинками и простыми шагами',
       desc: 'Пошаговое объяснение ребенку хода процедуры',
       time: '4 мин',
       icon: <BookIcon width={28} height={28} />,
@@ -86,7 +91,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
     {
       kind: 'game',
       title: 'Игра-тренажёр',
-      subtitle: 'Иду сдавать кровь из вены',
+      subtitle: 'Игровая практика для закрепления подготовки',
       desc: 'Закрепление полученных навыков через игровую практику',
       time: '4 мин',
       icon: <JoystickIcon width={32} height={32} />,
@@ -94,7 +99,7 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
     },
   ];
 
-  const primaryColor = '#18C6C8';   // единый бирюзовый цвет
+  const primaryColor = '#18C6C8';
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
@@ -116,16 +121,19 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
           >
             <BackIcon />
           </button>
-          <div style={{
-            flex: 1,
-            backgroundColor: primaryColor,
-            color: '#ffffff',
-            fontSize: '17px',
-            fontWeight: '600',
-            padding: '12px 16px',
-            borderRadius: '9999px',
-            textAlign: 'center',
-          }}>
+
+          <div
+            style={{
+              flex: 1,
+              backgroundColor: primaryColor,
+              color: '#ffffff',
+              fontSize: '17px',
+              fontWeight: '600',
+              padding: '12px 16px',
+              borderRadius: '9999px',
+              textAlign: 'center',
+            }}
+          >
             Сдача анализа крови
           </div>
         </div>
@@ -161,17 +169,27 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
                 >
                   {item.icon}
                 </div>
+
                 <div style={{ flex: 1 }}>
-                  {/* ЗАГОЛОВОК КАРТОЧКИ – ТЕПЕРЬ БИРЮЗОВЫЙ */}
-                  <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px', fontWeight: '600' }}>{item.subtitle}</div>
-                  <div style={{ fontSize: '14px', color: '#4b5563', marginTop: '2px' }}>{item.subtitle}</div>
-                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '2px' }}>{item.desc}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: primaryColor }}>
+                    {item.title}
+                  </div>
+
+                  <div style={{ fontSize: '16px', color: '#4b5563', marginTop: '4px', fontWeight: '600' }}>
+                    {item.subtitle}
+                  </div>
+
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+                    {item.desc}
+                  </div>
+
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
                     <ClockIcon />
                     <span style={{ fontSize: '12px' }}>{item.time}</span>
                   </div>
                 </div>
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
                 <button
                   onClick={item.onClick}

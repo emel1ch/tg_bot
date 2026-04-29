@@ -57,21 +57,42 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
     <div className="min-h-screen w-full bg-[#FFFEFA] px-4 py-8">
       <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
         <div className="flex w-full max-w-md flex-col items-center">
-          {/* Блок с текстом – выравнивание по левому краю */}
           <div className="mb-6 w-full">
-            <div className="mb-4 flex items-center justify-start text-white" style={{ backgroundColor: '#18C6C8', width: 'auto', height: '45px', borderRadius: '18px', paddingLeft: '16px', paddingRight: '16px' }}>
-  <span className="text-sm font-semibold" style={{ color: '#fff', lineHeight: '1.2', fontSize: '20px', fontWeight: '200' }}>Подготовка</span>
-</div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 text-left">
+            <div
+              className="mb-4 flex items-center justify-center text-white"
+              style={{
+                backgroundColor: '#18C6C8',
+                width: 'auto',
+                height: '45px',
+                borderRadius: '18px',
+                paddingLeft: '16px',
+                paddingRight: '16px',
+              }}
+            >
+              <span
+                className="text-sm font-semibold"
+                style={{
+                  color: '#fff',
+                  lineHeight: '1.2',
+                  fontSize: '20px',
+                  fontWeight: '200',
+                  textAlign: 'center',
+                }}
+              >
+                Подготовка
+              </span>
+            </div>
+
+            <h1 className="text-left text-2xl font-bold tracking-tight text-slate-900">
               Выберите направление подготовки
             </h1>
+
             <p className="mt-3 max-w-xs text-left text-xs leading-5 text-slate-500">
               Каждое направление содержит в себе набор адаптационных материалов: мультфильм, социальная история, игра-тренажер и рекомендации для родителей
             </p>
           </div>
 
           <div className="flex w-full flex-col items-center" style={{ gap: `${cardsGapPx}px` }}>
-            {/* Карточка стоматолога (платная) */}
             <ScenarioCard
               width={dentistCard.width}
               height={dentistCard.height}
@@ -98,7 +119,6 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
               onClick={() => dentistUnlocked ? onNavigate('adaptation-dentist') : onOpenDentistPay?.()}
             />
 
-            {/* Карточка сдачи крови (бесплатная) */}
             <ScenarioCard
               width={bloodCard.width}
               height={bloodCard.height}
