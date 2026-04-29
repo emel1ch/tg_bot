@@ -3,6 +3,9 @@ import os
 import asyncio
 import calendar
 from datetime import datetime, timezone, timedelta
+from database import async_session
+from database import Doctor
+from database import deactivate_doctor
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command, StateFilter, BaseFilter
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
@@ -13,6 +16,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
 from aiogram.filters import CommandObject
+from database import date_has_slots
 from database import get_all_users, grant_admin_rights
 from database import (
     init_db,
@@ -33,8 +37,19 @@ from database import (
     set_weekly_schedule,
     add_doctor_exception,
 )
+from database import (
+    create_city, get_cities, delete_city,
+    create_clinic, get_clinics_by_city, delete_clinic
+)
 
-bot = Bot(token=TOKEN)
+# 2. Создаем кастомный сервер API
+custom_server = TelegramAPIServer.from_base(WORKER_URL)
+
+# 3. Подключаем этот сервер к aiohttp сессии
+session = AiohttpSession(api=custom_server)
+
+# 4. Инициализируем бота с этой сессией
+bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
 
@@ -85,6 +100,15 @@ class UserState(StatesGroup):
 class SupportState(StatesGroup):
     waiting_for_question = State()
 
+WEEKDAY_NAMES = {
+    0: "Понедельник",
+    1: "Вторник",
+    2: "Среда",
+    3: "Четверг",
+    4: "Пятница",
+    5: "Суббота",
+    6: "Воскресенье"
+}
 
 # Состояния для пошаговой записи к врачу (FSM)
 class BookingState(StatesGroup):
@@ -139,7 +163,7 @@ async def ignore_calendar_clicks(callback: CallbackQuery):
     await callback.answer()
 
 
-def calendar_kb(year, month):
+async def calendar_kb(year, month, doctor_id=None):
     now = datetime.now(MSK_TZ)
 
     max_month = now.month + 2
@@ -169,12 +193,24 @@ def calendar_kb(year, month):
         for day in week:
             if day == 0:
                 row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
-            else:
-                # ПРОВЕРКА: блокируем прошедшие дни в текущем месяце
-                if year == now.year and month == now.month and day < now.day:
-                    row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
-                else:
-                    row.append(InlineKeyboardButton(text=str(day), callback_data=f"day_{year}_{month}_{day}"))
+                continue
+
+            target_date = datetime(year, month, day).date()
+
+            if target_date < now.date():
+                row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
+                continue
+
+            if doctor_id is None:
+                row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
+                continue
+
+            available = await date_has_slots(doctor_id, year, month, day)
+            if not available:
+                row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
+                continue
+
+            row.append(InlineKeyboardButton(text=str(day), callback_data=f"day_{year}_{month}_{day}"))
         keyboard.append(row)
 
     nav_row = []
@@ -199,10 +235,30 @@ def calendar_kb(year, month):
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-async def get_any_doctors():
-    async with async_session() as session:
-        result = await session.execute(select(Doctor))
-        return result.scalars().first()
+def admin_back_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+    ])
+def build_hour_keyboard(hours, prefix, back_callback):
+    rows = []
+    row = []
+
+    for h in hours:
+        row.append(
+            InlineKeyboardButton(
+                text=f"{h:02d}:00",
+                callback_data=f"{prefix}{h:02d}:00"
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+
+    if row:
+        rows.append(row)
+
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # СРАЗУ ПОСЛЕ КАЛЕНДАРЯ ДОБАВЛЯЕМ ФУНКЦИЮ ВРЕМЕНИ:
 async def get_times_kb(year, month, day, doctor_id):
@@ -239,17 +295,23 @@ def get_back_to_main_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔙 Вернуться на главную", callback_data="return_main")]
     ])
 
-def clinics_kb():
+async def clinics_kb(city_id):
+    clinics = await get_clinics_by_city(city_id)
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Клиника №1 (ст. м. ВДНХ)", callback_data="clinic_1")],
-        [InlineKeyboardButton(text="Клиника №2 (ст. м. Лубянка)", callback_data="clinic_2")],
-        [InlineKeyboardButton(text="Клиника №3 (ст. м. Бауманская)", callback_data="clinic_3")],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_city"),
-            InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+    if not clinics:
+        keyboard = [[InlineKeyboardButton(text="Нет клиник 😔", callback_data="ignore")]]
+    else:
+        keyboard = [
+            [InlineKeyboardButton(text=c.name, callback_data=f"clinic_{c.clinic_id}")]
+            for c in clinics
         ]
+
+    keyboard.append([
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_city"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
     ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 # --- Обработчики старта, согласия и телефона ---
 
@@ -365,69 +427,75 @@ async def process_phone(message: Message, state: FSMContext):
 @dp.callback_query(F.data == "menu_book_appointment")
 async def start_booking(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    # обязательно выставляем состояние
     await state.set_state(BookingState.choosing_city)
 
-    def cities_kb() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
-            [
-                InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
-                InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-            ]
-        ])
+    cities = await get_cities()
+
+    kb = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"city_{c.city_id}")]
+        for c in cities
+    ]
+    kb.append([
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+    ])
 
     await callback.message.edit_text(
-        "📍 Шаг 1: Выберите ваш город:",
-        reply_markup=cities_kb()
+        "📍 Выберите город:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
     )
 
 
 @dp.callback_query(BookingState.choosing_city, F.data.startswith("city_"))
 async def choose_city(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    city_map = {
-        "city_moscow": "г.Москва"
-    }
 
-    await state.update_data(city=city_map[callback.data])
+    city_id = int(callback.data.split("_")[1])
 
+    cities = await get_cities()
+    city = next(c.name for c in cities if c.city_id == city_id)
+
+    await state.update_data(
+        city_id=city_id,
+        city=city
+    )
 
     await state.set_state(BookingState.choosing_clinic)
-    progress = await get_progress_text(state)
 
     await callback.message.edit_text(
-        f"{progress}🏥 Выберите клинику:",
-        reply_markup=clinics_kb()
+        "🏥 Выберите клинику:",
+        reply_markup=await clinics_kb(city_id)
     )
 
 @dp.callback_query(BookingState.choosing_clinic, F.data.startswith("clinic_"))
 async def choose_clinic(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    clinic_map = {
-        "clinic_1": "Клиника №1 (ст. м. ВДНХ)",
-        "clinic_2": "Клиника №2 (ст. м. Лубянка)",
-        "clinic_3": "Клиника №3 (ст. м. Бауманская)"
-    }
+    clinic_id = int(callback.data.split("_")[1])
 
-    clinic_name = clinic_map[callback.data]
-    await state.update_data(clinic=clinic_name)
+    data = await state.get_data()
+    city_id = data["city_id"]
 
-    doctors = await get_doctors_by_clinic(clinic_name)
+    clinics = await get_clinics_by_city(city_id)
+    clinic = next(c.name for c in clinics if c.clinic_id == clinic_id)
+
+    await state.update_data(
+        clinic_id=clinic_id,
+        clinic=clinic
+    )
+
+    doctors = await get_doctors_by_clinic(clinic_id)
+
     await state.set_state(BookingState.choosing_doctor)
-
-    progress = await get_progress_text(state)
 
     if not doctors:
         await callback.message.edit_text(
-            f"{progress}В этой клинике пока нет врачей. Добавьте их в базу.",
+            "В этой клинике нет врачей",
             reply_markup=get_back_to_main_kb()
         )
         return
 
     await callback.message.edit_text(
-        f"{progress}👨‍⚕️ Выберите врача:",
+        "👨‍⚕️ Выберите врача:",
         reply_markup=doctors_kb(doctors)
     )
 
@@ -454,10 +522,22 @@ async def choose_doctor(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         f"{progress}📅 Выберите дату:",
-        reply_markup=calendar_kb(now.year, now.month)
+        reply_markup=await calendar_kb(now.year, now.month, doctor_id)
     )
 
+@dp.callback_query(BookingState.choosing_doctor, F.data == "back_to_clinic")
+async def back_to_clinic_from_doctor(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
 
+    data = await state.get_data()
+    city_id = data["city_id"]
+
+    await state.set_state(BookingState.choosing_clinic)
+
+    await callback.message.edit_text(
+        "🏥 Выберите клинику:",
+        reply_markup=await clinics_kb(city_id)
+    )
 
 @dp.callback_query(BookingState.choosing_date, F.data.startswith("day_"))
 async def choose_day(callback: CallbackQuery, state: FSMContext):
@@ -479,10 +559,23 @@ async def choose_day(callback: CallbackQuery, state: FSMContext):
     doctor_id = data["doctor_id"]
     progress = await get_progress_text(state)
 
-    await callback.message.edit_text(
-        f"{progress}⏰ Выберите время:",
-        reply_markup=await get_times_kb(year, month, day, doctor_id)
-    )
+    await callback.message.edit_text("⏳ Загружаю доступное время...")
+
+    try:
+        kb = await get_times_kb(year, month, day, doctor_id)
+        await callback.message.edit_text(
+            f"{progress}⏰ Выберите время:",
+            reply_markup=kb
+        )
+    except Exception as e:
+        print(f"get_times_kb error: {e}")
+        await callback.message.edit_text(
+            f"{progress}❌ Не удалось загрузить время на выбранную дату.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_date")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
+            ])
+        )
 
 
 async def get_progress_text(state: FSMContext):
@@ -511,8 +604,7 @@ async def get_progress_text(state: FSMContext):
 
 
 @dp.callback_query(F.data.startswith("next_"))
-async def next_month(callback: CallbackQuery):
-
+async def next_month(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     _, year, month = callback.data.split("_")
@@ -524,14 +616,16 @@ async def next_month(callback: CallbackQuery):
         month = 1
         year += 1
 
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
     await callback.message.edit_reply_markup(
-        reply_markup=calendar_kb(year, month)
+        reply_markup=await calendar_kb(year, month, doctor_id)
     )
 
 
 @dp.callback_query(F.data.startswith("prev_"))
-async def prev_month(callback: CallbackQuery):
-
+async def prev_month(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     _, year, month = callback.data.split("_")
@@ -543,8 +637,11 @@ async def prev_month(callback: CallbackQuery):
         month = 12
         year -= 1
 
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
     await callback.message.edit_reply_markup(
-        reply_markup=calendar_kb(year, month)
+        reply_markup=await calendar_kb(year, month, doctor_id)
     )
 
 
@@ -608,16 +705,37 @@ async def back_to_time(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(BookingState.choosing_clinic, F.data == "back_to_city")
 async def back_to_city(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    # воссоздаём клавиатуру города (как в start_booking)
-    cities_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="г.Москва", callback_data="city_moscow")],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="return_main"),
-            InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
-        ]
-    ])
+
+    cities = await get_cities()
+
+    kb = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"city_{c.city_id}")]
+        for c in cities
+    ]
+
     await state.set_state(BookingState.choosing_city)
-    await callback.message.edit_text("📍 Шаг 1: Выберите ваш город:", reply_markup=cities_markup)
+
+    await callback.message.edit_text(
+        "📍 Выберите город:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
+
+
+@dp.callback_query(F.data == "back_to_weekday")
+async def back_to_weekday(callback: CallbackQuery, state: FSMContext):
+    await start_schedule(callback, state)
+
+
+@dp.callback_query(F.data == "back_to_start")
+async def back_to_start(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_time_start)
+    await callback.message.edit_text("Выбери время начала:")
+
+
+@dp.callback_query(F.data == "back_to_end")
+async def back_to_end(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_time_end)
+    await callback.message.edit_text("Выбери время окончания:")
 
 @dp.callback_query(F.data == "confirm_booking")
 async def confirm_booking(callback: CallbackQuery, state: FSMContext):
@@ -666,9 +784,12 @@ async def back_to_clinic(callback: CallbackQuery, state: FSMContext):
 
     progress = await get_progress_text(state)
 
+    data = await state.get_data()
+    city_id = data["city_id"]
+
     await callback.message.edit_text(
         f"{progress}🏥 Выберите клинику:",
-        reply_markup=clinics_kb()
+        reply_markup=await clinics_kb(city_id)
     )
 
 @dp.callback_query(BookingState.choosing_time, F.data == "back_to_date")
@@ -683,9 +804,12 @@ async def back_to_date(callback: CallbackQuery, state: FSMContext):
 
     progress = await get_progress_text(state)
 
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
     await callback.message.edit_text(
         f"{progress}📅 Выберите дату:",
-        reply_markup=calendar_kb(now.year, now.month)
+        reply_markup=await calendar_kb(now.year, now.month, doctor_id)
     )
 
 
@@ -782,42 +906,52 @@ async def forward_to_support(message: Message, state: FSMContext):
 
 
 # Инициализация Бд
-async def on_startup(bot: Bot, **kwargs):
-    await init_db()
-    await seed_doctors_if_empty()
-    asyncio.create_task(reminder_worker())
+# async def on_startup(bot: Bot, **kwargs):
+#     await init_db()
+#     await seed_doctors_if_empty()
+#     asyncio.create_task(reminder_worker())
 
-dp.startup.register(on_startup)
+# dp.startup.register(on_startup)
 
 async def main():
-    print("Запуск бота через прокси Cloudflare...")
-    # Сбрасываем вебхуки на всякий случай и запускаем поллинг
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    print("Запуск бота...")
 
-async def seed_doctors_if_empty():
-    doctors = await get_doctors_by_clinic("Клиника №1 (ст. м. ВДНХ)")
-    if doctors:
-        return
+    try:
+        await init_db()
+        print("БД подключена")
 
-    clinic_names = [
-        "Клиника №1 (ст. м. ВДНХ)",
-        "Клиника №2 (ст. м. Лубянка)",
-        "Клиника №3 (ст. м. Бауманская)",
-    ]
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook удален")
 
-    sample = [
-        ("Анна Сергеевна Петрова", "Педиатр"),
-        ("Илья Викторович Смирнов", "Невролог"),
-        ("Мария Андреевна Кузнецова", "ЛОР"),
-    ]
+        await dp.start_polling(bot)
 
-    for clinic in clinic_names:
-        for name, spec in sample:
-            doctor = await create_doctor(clinic=clinic, full_name=name, specialty=spec)
-            # Пн-Пт 09:00-17:00
-            for wd in range(5):
-                await set_weekly_schedule(doctor.doctor_id, wd, "09:00", "17:00", True)
+    except Exception as e:
+        print("❌ ОШИБКА ПРИ ЗАПУСКЕ:")
+        print(e)
+
+# async def seed_doctors_if_empty():
+#     doctors = await get_doctors_by_clinic("Клиника №1 (ст. м. ВДНХ)")
+#     if doctors:
+#         return
+#
+#     clinic_names = [
+#         "Клиника №1 (ст. м. ВДНХ)",
+#         "Клиника №2 (ст. м. Лубянка)",
+#         "Клиника №3 (ст. м. Бауманская)",
+#     ]
+#
+#     sample = [
+#         ("Анна Сергеевна Петрова", "Педиатр"),
+#         ("Илья Викторович Смирнов", "Невролог"),
+#         ("Мария Андреевна Кузнецова", "ЛОР"),
+#     ]
+#
+#     for clinic in clinic_names:
+#         for name, spec in sample:
+#             doctor = await create_doctor(clinic=clinic, full_name=name, specialty=spec)
+#             # Пн-Пт 09:00-17:00
+#             for wd in range(5):
+#                 await set_weekly_schedule(doctor.doctor_id, wd, "09:00", "17:00", True)
 
 
 
@@ -825,6 +959,23 @@ async def seed_doctors_if_empty():
 class AdminState(StatesGroup):
     waiting_for_broadcast = State()
     waiting_for_new_admin_id = State()
+    waiting_city_name = State()
+    waiting_clinic_name = State()
+    waiting_clinic_city = State()
+    choosing_city_for_doctor = State()
+    choosing_clinic_for_doctor = State()
+    waiting_doctor_name = State()
+    waiting_doctor_specialty = State()
+    choosing_weekday = State()
+    choosing_time_start = State()
+    choosing_time_end = State()
+    confirm_schedule = State()
+    choosing_exception_date = State()
+    choosing_exception_type = State()
+    choosing_exception_start = State()
+    choosing_exception_end = State()
+    editing_name=State()
+    editing_spec = State()
 
 
 class IsAdmin(BaseFilter):
@@ -841,6 +992,9 @@ class IsAdmin(BaseFilter):
 def get_admin_kb(user_id: int):
     kb = [
         [InlineKeyboardButton(text="📢 Сделать рассылку", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="🏙 Города", callback_data="admin_cities")],
+        [InlineKeyboardButton(text="🏥 Клиники", callback_data="admin_clinics")],
+        [InlineKeyboardButton(text="👨‍⚕️ Врачи", callback_data="admin_doctors")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")]
     ]
     # Кнопку добавления админов показываем ТОЛЬКО Суперадмину
@@ -876,7 +1030,311 @@ async def admin_stats(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=get_admin_kb(callback.from_user.id)
     )
+#Меню клиник
+@dp.callback_query(F.data == "admin_clinics")
+async def admin_clinics(callback: CallbackQuery):
+    cities = await get_cities()
 
+    kb = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"clinic_city_{c.city_id}")]
+        for c in cities
+    ]
+
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text("Выбери город:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("del_doc_"))
+async def delete_doctor(callback: CallbackQuery, state: FSMContext):
+    doctor_id = int(callback.data.split("_")[2])
+
+    await deactivate_doctor(doctor_id)
+
+    await callback.answer("Удалено")
+
+    data = await state.get_data()
+    clinic_id = data.get("clinic_id")
+
+    doctors = await get_doctors_by_clinic(clinic_id)
+
+    kb = []
+    for d in doctors:
+        kb.append([
+            InlineKeyboardButton(text=f"✏️ {d.full_name}", callback_data=f"edit_doc_{d.doctor_id}"),
+            InlineKeyboardButton(text="❌", callback_data=f"del_doc_{d.doctor_id}")
+        ])
+
+    kb.append([InlineKeyboardButton(text="➕ Добавить врача", callback_data="add_new_doctor")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text("👨‍⚕️ Врачи:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("clinic_city_"))
+async def clinics_in_city(callback: CallbackQuery):
+    city_id = int(callback.data.split("_")[2])
+    clinics = await get_clinics_by_city(city_id)
+
+    kb = [
+        [InlineKeyboardButton(text=f"❌ {c.name}", callback_data=f"delete_clinic_{c.clinic_id}")]
+        for c in clinics
+    ]
+
+    kb.append([InlineKeyboardButton(text=f"➕ Добавить", callback_data=f"add_clinic_{city_id}")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+    await callback.message.edit_text("🏥 Клиники:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data == "admin_back")
+async def admin_back(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "Админ панель:",
+        reply_markup=get_admin_kb(callback.from_user.id)
+    )
+
+@dp.message(AdminState.waiting_city_name)
+async def save_city(message: Message, state: FSMContext):
+    try:
+        await create_city(message.text)
+        await message.answer("✅ Город добавлен")
+    except Exception:
+        await message.answer("❌ Такой город уже существует")
+
+    await state.clear()
+
+
+@dp.callback_query(F.data.startswith("add_clinic_"))
+async def add_clinic_start(callback: CallbackQuery, state: FSMContext):
+    city_id = int(callback.data.split("_")[2])
+    await state.update_data(city_id=city_id)
+    await state.set_state(AdminState.waiting_clinic_name)
+
+    await callback.message.edit_text("Введите название клиники:")
+
+@dp.message(AdminState.waiting_clinic_name)
+async def save_clinic(message: Message, state: FSMContext):
+    data = await state.get_data()
+    await create_clinic(message.text, data["city_id"])
+
+    await state.clear()
+    await message.answer("✅ Клиника добавлена")
+
+@dp.callback_query(F.data.startswith("delete_clinic_"))
+async def delete_clinic_handler(callback: CallbackQuery):
+    clinic_id = int(callback.data.split("_")[2])
+    await delete_clinic(clinic_id)
+
+    await callback.answer("Удалено")
+    await clinics_in_city(callback)
+
+@dp.callback_query(F.data == "admin_doctors")
+async def admin_doctors(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_city_for_doctor)
+
+    cities = await get_cities()
+
+    kb = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"doc_city_{c.city_id}")]
+        for c in cities
+    ]
+
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text(
+        "Выбери город для врача:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
+
+@dp.callback_query(AdminState.choosing_city_for_doctor, F.data.startswith("doc_city_"))
+async def choose_city_for_doctor(callback: CallbackQuery, state: FSMContext):
+    city_id = int(callback.data.split("_")[2])
+
+    await state.update_data(city_id=city_id)
+    await state.set_state(AdminState.choosing_clinic_for_doctor)
+
+    clinics = await get_clinics_by_city(city_id)
+
+    kb = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"doc_clinic_{c.clinic_id}")]
+        for c in clinics
+    ]
+
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text(
+        "Выбери клинику:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
+
+@dp.callback_query(AdminState.choosing_clinic_for_doctor, F.data.startswith("doc_clinic_"))
+async def choose_clinic_for_doctor(callback: CallbackQuery, state: FSMContext):
+    clinic_id = int(callback.data.split("_")[2])
+
+    await state.update_data(clinic_id=clinic_id)
+
+    doctors = await get_doctors_by_clinic(clinic_id)
+
+    kb = []
+
+    for d in doctors:
+        kb.append([
+            InlineKeyboardButton(text=f"✏️ {d.full_name}", callback_data=f"edit_doc_{d.doctor_id}"),
+            InlineKeyboardButton(text="❌", callback_data=f"del_doc_{d.doctor_id}")
+        ])
+
+    kb.append([InlineKeyboardButton(text="➕ Добавить врача", callback_data="add_new_doctor")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text(
+        "👨‍⚕️ Врачи:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
+
+@dp.message(AdminState.editing_name)
+async def save_new_name(message: Message, state: FSMContext):
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
+    if not doctor_id:
+        await message.answer("❌ Ошибка: врач не найден")
+        return
+
+    async with async_session() as session:
+        doctor = await session.get(Doctor, doctor_id)
+
+        if not doctor:
+            await message.answer("❌ Врач не найден")
+            return
+
+        doctor.full_name = message.text
+        await session.commit()
+
+    await state.clear()
+    await message.answer("✅ ФИО обновлено")
+
+
+
+@dp.callback_query(F.data == "add_new_doctor")
+async def add_new_doctor(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.waiting_doctor_name)
+
+    await callback.message.edit_text(
+        "Введите ФИО врача:",
+        reply_markup=back_main_admin_kb()
+    )
+
+
+@dp.callback_query(F.data.startswith("edit_doc_"))
+async def edit_doctor(callback: CallbackQuery, state: FSMContext):
+    doctor_id = int(callback.data.split("_")[2])
+
+    await state.update_data(doctor_id=doctor_id)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить ФИО", callback_data="edit_name")],
+        [InlineKeyboardButton(text="🩺 Изменить специальность", callback_data="edit_spec")],
+        [InlineKeyboardButton(text="📅 Расписание", callback_data="add_schedule")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+    ])
+
+    await callback.message.edit_text("Редактирование врача:", reply_markup=kb)
+
+@dp.callback_query(F.data == "edit_name")
+async def edit_name(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.editing_name)
+
+    await callback.message.edit_text(
+        "Введите новое ФИО:",
+        reply_markup=back_main_admin_kb()
+    )
+
+
+@dp.message(AdminState.editing_name)
+async def save_new_name(message: Message, state: FSMContext):
+    data = await state.get_data()
+    doctor_id = data["doctor_id"]
+
+    async with async_session() as session:
+        doctor = await session.get(Doctor, doctor_id)
+        doctor.full_name = message.text
+        await session.commit()
+
+    await state.clear()
+    await message.answer("✅ ФИО обновлено", reply_markup=get_admin_kb(message.from_user.id))
+
+@dp.callback_query(F.data == "edit_spec")
+async def edit_spec(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.editing_spec)
+
+    await callback.message.edit_text(
+        "Введите новую специальность:",
+        reply_markup=back_main_admin_kb()
+    )
+
+@dp.message(AdminState.editing_spec)
+async def save_new_spec(message: Message, state: FSMContext):
+    data = await state.get_data()
+    doctor_id = data["doctor_id"]
+
+    async with async_session() as session:
+        doctor = await session.get(Doctor, doctor_id)
+        doctor.specialty = message.text
+        await session.commit()
+
+    await state.clear()
+    await message.answer("✅ Специальность обновлена", reply_markup=get_admin_kb(message.from_user.id))
+
+@dp.message(AdminState.waiting_doctor_name)
+async def input_doctor_name(message: Message, state: FSMContext):
+    await state.update_data(full_name=message.text)
+    await state.set_state(AdminState.waiting_doctor_specialty)
+
+    await message.answer(
+        "Введите специальность врача:",
+        reply_markup=back_main_admin_kb()
+    )
+
+def back_main_admin_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
+    ])
+
+@dp.message(AdminState.waiting_doctor_specialty)
+async def input_doctor_specialty(message: Message, state: FSMContext):
+    data = await state.get_data()
+
+    doctor = await create_doctor(
+        clinic_id=data["clinic_id"],
+        full_name=data["full_name"],
+        specialty=message.text
+    )
+
+    await state.update_data(doctor_id=doctor.doctor_id)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅 Добавить расписание", callback_data="add_schedule")],
+        [InlineKeyboardButton(text="🚫 Исключения (даты)", callback_data="add_exception")],
+        [InlineKeyboardButton(text="🏠 В админку", callback_data="admin_back")]
+    ])
+
+    await message.answer(
+        f"✅ Врач добавлен:\n{doctor.full_name}",
+        reply_markup=kb
+    )
+
+#Управление городами
+@dp.callback_query(F.data == "add_city")
+async def add_city(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.waiting_city_name)
+    await callback.message.edit_text("Введите название города:")
+
+@dp.callback_query(F.data.startswith("delete_city_"))
+async def delete_city_handler(callback: CallbackQuery):
+    city_id = int(callback.data.split("_")[2])
+    await delete_city(city_id)
+
+    await callback.answer("Удалено")
+    await admin_cities(callback)
 
 # 3. Добавление нового админа по ID
 @dp.callback_query(F.data == "admin_add_new")
@@ -924,120 +1382,203 @@ async def process_new_admin(message: Message, state: FSMContext):
             reply_markup=get_admin_kb(message.from_user.id)
         )
 
+#Управление городами
+@dp.callback_query(F.data == "admin_cities")
+async def admin_cities(callback: CallbackQuery):
+    cities = await get_cities()
+
+    kb = [
+        [InlineKeyboardButton(text=f"❌ {c.name}", callback_data=f"delete_city_{c.city_id}")]
+        for c in cities
+    ]
+
+    kb.append([InlineKeyboardButton(text="➕ Добавить город", callback_data="add_city")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text("🏙 Города:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 
-#Добавление врача
-# /doctor_add Клиника №1 (ст. м. ВДНХ) | Тестовый Доктор | Терапевт
-@dp.message(Command("doctor_add"), IsAdmin())
-async def cmd_doctor_add(message: Message):
-    try:
-        text = message.text.replace("/doctor_add", "").strip()
-        parts = [p.strip() for p in text.split("|")]
+#Выбор дня недели
+@dp.callback_query(F.data == "add_schedule")
+async def start_schedule(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_weekday)
 
-        if len(parts) < 3:
-            await message.answer("Формат:\n/doctor_add клиника | ФИО | специальность")
-            return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пн", callback_data="day_0")],
+        [InlineKeyboardButton(text="Вт", callback_data="day_1")],
+        [InlineKeyboardButton(text="Ср", callback_data="day_2")],
+        [InlineKeyboardButton(text="Чт", callback_data="day_3")],
+        [InlineKeyboardButton(text="Пт", callback_data="day_4")],
+        [InlineKeyboardButton(text="Сб", callback_data="day_5")],
+        [InlineKeyboardButton(text="Вс", callback_data="day_6")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_admin")]
+    ])
 
-        clinic = parts[0]
-        full_name = parts[1]
-        specialty = parts[2]
+    await callback.message.edit_text("Выбери день недели:", reply_markup=kb)
 
-        doctor = await create_doctor(
-            clinic=clinic,
-            full_name=full_name,
-            specialty=specialty
-        )
+@dp.callback_query(AdminState.choosing_weekday, F.data.startswith("day_"))
+async def choose_weekday(callback: CallbackQuery, state: FSMContext):
+    weekday = int(callback.data.split("_")[1])
 
-        await message.answer(f"✅ Врач добавлен:\n{doctor.full_name}\nID={doctor.doctor_id}")
+    await state.update_data(weekday=weekday)
+    await state.set_state(AdminState.choosing_time_start)
 
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+    kb = build_hour_keyboard(range(7, 14), "start_", "back_to_weekday")
 
-#Команда задать рабочие часы на неделю
-@dp.message(Command("doctor_week"), IsAdmin())
-async def cmd_doctor_week(message: Message):
-    # /doctor_week doctor_id | weekday | 09:00 | 15:00 | 1
-    # weekday: 0=Пн ... 6=Вс
-    parts = [p.strip() for p in message.text.split("|")]
-    if len(parts) != 5:
-        await message.answer("Формат:\n/doctor_week doctor_id | weekday(0-6) | start(HH:MM) | end(HH:MM) | 1/0")
-        return
-
-    doctor_id = int(parts[0].split()[1])
-    weekday = int(parts[1])
-    start_time = parts[2]
-    end_time = parts[3]
-    is_working = parts[4] == "1"
-
-    await set_weekly_schedule(doctor_id, weekday, start_time, end_time, is_working)
-    await message.answer("✅ Расписание сохранено.")
-
-
-#Команда исключение на конкретную дату
-@dp.message(Command("doctor_dayoff"), IsAdmin())
-async def cmd_doctor_dayoff(message: Message):
-    # /doctor_dayoff doctor_id | 2026-04-10 | причина
-    parts = [p.strip() for p in message.text.split("|")]
-    if len(parts) < 2:
-        await message.answer("Формат:\n/doctor_dayoff doctor_id | YYYY-MM-DD | причина")
-        return
-
-    doctor_id = int(parts[0].split()[1])
-    exc_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
-    note = parts[2] if len(parts) >= 3 else "Выходной"
-
-    await add_doctor_exception(
-        doctor_id=doctor_id,
-        exc_date=exc_date,
-        is_working=False,
-        note=note,
+    await callback.message.edit_text(
+        "Выбери время начала:",
+        reply_markup=kb
     )
-    await message.answer("✅ Выходной добавлен.")
+@dp.callback_query(AdminState.choosing_time_start, F.data.startswith("start_"))
+async def choose_start(callback: CallbackQuery, state: FSMContext):
+    start_time = callback.data.replace("start_", "")
 
+    await state.update_data(start_time=start_time)
+    await state.set_state(AdminState.choosing_time_end)
 
-#Команда нестандартного приема в конкретный день
-@dp.message(Command("doctor_workday"), IsAdmin())
-async def cmd_doctor_workday(message: Message):
-    # /doctor_workday doctor_id | 2026-04-10 | 12:00 | 18:00
-    parts = [p.strip() for p in message.text.split("|")]
-    if len(parts) != 4:
-        await message.answer("Формат:\n/doctor_workday doctor_id | YYYY-MM-DD | start(HH:MM) | end(HH:MM)")
-        return
+    kb = build_hour_keyboard(range(14, 21), "end_", "back_to_start")
 
-    doctor_id = int(parts[0].split()[1])
-    exc_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
-    start_time = parts[2]
-    end_time = parts[3]
+    await callback.message.edit_text(
+        "Выбери время окончания:",
+        reply_markup=kb
+    )
+
+    await callback.message.edit_text("Выбери время окончания:", reply_markup=kb)
+
+@dp.callback_query(AdminState.choosing_time_end, F.data.startswith("end_"))
+async def choose_end(callback: CallbackQuery, state: FSMContext):
+    end_time = callback.data.replace("end_", "")
+
+    data = await state.get_data()
+
+    await state.update_data(end_time=end_time)
+    await state.set_state(AdminState.confirm_schedule)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сохранить", callback_data="save_schedule")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_end")]
+    ])
+
+    await callback.message.edit_text(
+        f"""
+Проверь:
+
+День: {WEEKDAY_NAMES[data['weekday']]}
+Время: {data['start_time']} - {end_time}
+""",
+        reply_markup=kb
+    )
+
+@dp.callback_query(F.data == "save_schedule")
+async def save_schedule(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    await set_weekly_schedule(
+        doctor_id=data["doctor_id"],
+        weekday=data["weekday"],
+        start_time=data["start_time"],
+        end_time=data["end_time"]
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить ещё день", callback_data="add_schedule")],
+        [InlineKeyboardButton(text="🏠 В админку", callback_data="admin_back")]
+    ])
+
+    await callback.message.edit_text("✅ Расписание сохранено", reply_markup=kb)
+
+@dp.callback_query(F.data == "add_exception")
+async def start_exception(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_exception_date)
+
+    now = datetime.now(MSK_TZ)
+
+    await callback.message.edit_text(
+        "📅 Выбери дату исключения:",
+        reply_markup=await calendar_kb(now.year, now.month)
+    )
+
+@dp.callback_query(AdminState.choosing_exception_date, F.data.startswith("day_"))
+async def choose_exception_date(callback: CallbackQuery, state: FSMContext):
+    _, year, month, day = callback.data.split("_")
+    year, month, day = int(year), int(month), int(day)
+
+    await state.update_data(exc_year=year, exc_month=month, exc_day=day)
+    await state.set_state(AdminState.choosing_exception_type)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Выходной (не работает)", callback_data="exc_off")],
+        [InlineKeyboardButton(text="⏰ Особые часы", callback_data="exc_custom")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+    ])
+
+    await callback.message.edit_text(
+        "Выбери тип исключения:",
+        reply_markup=kb
+    )
+
+@dp.callback_query(AdminState.choosing_exception_type, F.data == "exc_off")
+async def exception_off(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
 
     await add_doctor_exception(
-        doctor_id=doctor_id,
-        exc_date=exc_date,
+        doctor_id=data["doctor_id"],
+        exc_date=datetime(data["exc_year"], data["exc_month"], data["exc_day"]).date(),
+        is_working=False
+    )
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        "✅ День успешно заблокирован",
+        reply_markup=back_main_admin_kb()
+    )
+
+@dp.callback_query(AdminState.choosing_exception_type, F.data == "exc_custom")
+async def exception_custom_start(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminState.choosing_exception_start)
+
+    kb = build_hour_keyboard(range(7, 14), "exc_start_", "admin_back")
+
+    await callback.message.edit_text(
+        "Выбери время начала:",
+        reply_markup=kb
+    )
+
+@dp.callback_query(AdminState.choosing_exception_start, F.data.startswith("exc_start_"))
+async def exception_custom_end(callback: CallbackQuery, state: FSMContext):
+    start_time = callback.data.replace("exc_start_", "")
+
+    await state.update_data(exc_start=start_time)
+    await state.set_state(AdminState.choosing_exception_end)
+
+    kb = build_hour_keyboard(range(14, 21), "exc_end_", "admin_back")
+
+    await callback.message.edit_text(
+        "Выбери время окончания:",
+        reply_markup=kb
+    )
+
+@dp.callback_query(AdminState.choosing_exception_end, F.data.startswith("exc_end_"))
+async def save_exception(callback: CallbackQuery, state: FSMContext):
+    end_time = callback.data.replace("exc_end_", "")
+    data = await state.get_data()
+
+    await add_doctor_exception(
+        doctor_id=data["doctor_id"],
+        exc_date=datetime(data["exc_year"], data["exc_month"], data["exc_day"]).date(),
         is_working=True,
-        start_time=start_time,
-        end_time=end_time,
-        note="Индивидуальный прием",
+        start_time=data["exc_start"],
+        end_time=end_time
     )
-    await message.answer("✅ Специальный рабочий день сохранен.")
 
-#Удаление врача /doctor_delete 3
-@dp.message(Command("doctor_delete"), IsAdmin())
-async def cmd_delete_doctor(message: Message, command: CommandObject):
-    if not command.args:
-        await message.answer("Формат: /doctor_delete ID")
-        return
+    await state.clear()
 
-    try:
-        doctor_id = int(command.args.strip())
+    await callback.message.edit_text(
+        "✅ Особое расписание сохранено",
+        reply_markup=admin_back_kb()
+    )
 
-        success = await deactivate_doctor(doctor_id)
-
-        if success:
-            await message.answer(f"✅ Врач {doctor_id} отключен")
-        else:
-            await message.answer("❌ Врач не найден")
-
-    except ValueError:
-        await message.answer("❌ ID должен быть числом")
 
 # 4. Запуск рассылки
 @dp.callback_query(F.data == "admin_broadcast")
