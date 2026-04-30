@@ -27,7 +27,7 @@ const STORY_UI = {
     },
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     marginTop: 18,
     x: 0,
     y: 10,
