@@ -2,23 +2,26 @@ import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 const SLIDER_UI = {
+  layout: {
+    offsetY: -28, // двигает вверх весь Slider целиком
+  },
   card: {
     padding: 16,
     radius: 28,
   },
   imageBox: {
     width: 380,
-    height: 380,
+    height: 360,
     radius: 24,
   },
   textBox: {
     width: 300,
     radius: 24,
-    marginTop: 16,
-    paddingX: 20,
-    paddingY: 18,
+    marginTop: 12,
+    paddingX: 18,
+    paddingY: 8,
     fontSize: 16,
-    lineHeight: 28,
+    lineHeight: 18,
     borderWidth: 2,
     borderColor: '#8ADFD9',
   },
@@ -83,7 +86,12 @@ export default function Slider({ slides = [] }) {
   const MotionDiv = motion.div
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
+    <div
+      className="flex h-full min-h-0 w-full flex-col"
+      style={{
+        marginTop: `${SLIDER_UI.layout.offsetY}px`,
+      }}
+    >
       <div
         className="overflow-hidden bg-[#FFFEFA]"
         style={{
@@ -139,7 +147,7 @@ export default function Slider({ slides = [] }) {
               }}
             >
               <p
-                className="break-words text-slate-700"
+                className="wrap-break-word text-slate-700"
                 style={{
                   fontSize: `${SLIDER_UI.textBox.fontSize}px`,
                   lineHeight: `${SLIDER_UI.textBox.lineHeight}px`,

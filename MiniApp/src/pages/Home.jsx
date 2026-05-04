@@ -75,7 +75,7 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
                   color: '#fff',
                   lineHeight: '1.2',
                   fontSize: '20px',
-                  fontWeight: '200',
+                  fontWeight: '400',
                   textAlign: 'center',
                 }}
               >
@@ -110,7 +110,7 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
               subtitleWrapStyle={{ top: '13px', left: '10px' }}
               materialsWrapStyle={{ top: '18px', left: '10px' }}
               footerLeft={dentistUnlocked ? <div className={freeBadgeClass}>Доступ открыт</div> : <div className={dentistBadgeClass}>69 ₽</div>}
-              footerLeftWrapStyle={{ top: '10px', left: '10px' }}
+              footerLeftWrapStyle={{ top: '-5px', left: '10px' }}
               footerRightLabel={dentistUnlocked ? 'Начать' : 'Купить'}
               footerRightIcon={dentistUnlocked ? null : <CartIcon className="text-white" />}
               footerRightClassName={dentistUnlocked ? freeButtonClass : paidButtonClass}
@@ -136,7 +136,7 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
               subtitleWrapStyle={{ top: '13px', left: '10px' }}
               materialsWrapStyle={{ top: '18px', left: '10px' }}
               footerLeft={<div className={freeBadgeClass}>Бесплатно</div>}
-              footerLeftWrapStyle={{ top: '0px', left: '10px' }}
+              footerLeftWrapStyle={{ top: '-5px', left: '10px' }}
               footerRightLabel="Начать"
               footerRightClassName={freeButtonClass}
               footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: '12px 24px' }}

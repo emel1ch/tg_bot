@@ -11,7 +11,7 @@ const STORY_UI = {
       size: 48,
       iconSize: 24,
       x: 0,
-      y: 24,
+      y: 8,
       left: 0,
       top: 0,
     },
@@ -27,7 +27,7 @@ const STORY_UI = {
   },
   title: {
     fontSize: 22,
-    marginTop: 18,
+    marginTop: -17,
     x: 0,
     y: 10,
   },
@@ -35,75 +35,102 @@ const STORY_UI = {
 
 export default function Story({ onBack }) {
   return (
-    <div className="min-h-dvh w-full bg-[#FFFEFA] px-4 py-5">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
-        <div
-          className="relative w-full"
-          style={{
-            minHeight: `${STORY_UI.header.minHeight}px`,
-            paddingTop: `${STORY_UI.header.topGap}px`,
-            paddingLeft: `${STORY_UI.header.sidePadding}px`,
-            paddingRight: `${STORY_UI.header.sidePadding}px`,
-          }}
-        >
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Назад"
-            className="absolute z-20 flex items-center justify-center rounded-full bg-[#D7F2F0] transition active:scale-95"
-            style={{
-              width: `${STORY_UI.header.backButton.size}px`,
-              height: `${STORY_UI.header.backButton.size}px`,
-              left: `${STORY_UI.header.backButton.left}px`,
-              top: `${STORY_UI.header.backButton.top}px`,
-              transform: `translate(${STORY_UI.header.backButton.x}px, ${STORY_UI.header.backButton.y}px)`,
-              border: 'none',
-              boxShadow: 'none',
-            }}
-          >
-            <span
-              className="leading-none"
+    <div style={{ height: '100dvh', width: '100%', backgroundColor: '#FFFEFA', overflow: 'hidden' }}>
+      <div
+        style={{
+          height: '100%',
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Шапка — не скроллится */}
+        <div style={{ flexShrink: 0, padding: '20px 16px 16px' }}>
+          <div style={{ maxWidth: '480px', margin: '0 auto' }}>
+            <div
+              className="relative w-full"
               style={{
-                fontSize: `${STORY_UI.header.backButton.iconSize}px`,
-                color: '#0F172A',
+                minHeight: `${STORY_UI.header.minHeight}px`,
+                paddingTop: `${STORY_UI.header.topGap}px`,
+                paddingLeft: `${STORY_UI.header.sidePadding}px`,
+                paddingRight: `${STORY_UI.header.sidePadding}px`,
               }}
             >
-              ←
-            </span>
-          </button>
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Назад"
+                className="absolute z-20 flex items-center justify-center rounded-full bg-[#D7F2F0] transition active:scale-95"
+                style={{
+                  width: `${STORY_UI.header.backButton.size}px`,
+                  height: `${STORY_UI.header.backButton.size}px`,
+                  left: `${STORY_UI.header.backButton.left}px`,
+                  top: `${STORY_UI.header.backButton.top}px`,
+                  transform: `translate(${STORY_UI.header.backButton.x}px, ${STORY_UI.header.backButton.y}px)`,
+                  border: 'none',
+                  boxShadow: 'none',
+                }}
+              >
+                <span
+                  className="leading-none"
+                  style={{
+                    fontSize: `${STORY_UI.header.backButton.iconSize}px`,
+                    color: '#0F172A',
+                  }}
+                >
+                  ←
+                </span>
+              </button>
 
-          <div
-            className="absolute left-1/2 top-0 inline-flex items-center justify-center rounded-full bg-[#18C6C8]"
-            style={{
-              minWidth: `${STORY_UI.header.sectionTag.minWidth}px`,
-              height: `${STORY_UI.header.sectionTag.height}px`,
-              paddingLeft: `${STORY_UI.header.sectionTag.paddingX}px`,
-              paddingRight: `${STORY_UI.header.sectionTag.paddingX}px`,
-              paddingTop: `${STORY_UI.header.sectionTag.paddingY}px`,
-              paddingBottom: `${STORY_UI.header.sectionTag.paddingY}px`,
-              fontSize: `${STORY_UI.header.sectionTag.fontSize}px`,
-              transform: `translate(-50%, 0) translate(${STORY_UI.header.sectionTag.x}px, ${STORY_UI.header.sectionTag.y}px)`,
-              color: '#FFFFFF',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Сдача крови
+              <div
+                className="absolute left-1/2 top-0 inline-flex items-center justify-center rounded-full bg-[#18C6C8]"
+                style={{
+                  minWidth: `${STORY_UI.header.sectionTag.minWidth}px`,
+                  height: `${STORY_UI.header.sectionTag.height}px`,
+                  paddingLeft: `${STORY_UI.header.sectionTag.paddingX}px`,
+                  paddingRight: `${STORY_UI.header.sectionTag.paddingX}px`,
+                  paddingTop: `${STORY_UI.header.sectionTag.paddingY}px`,
+                  paddingBottom: `${STORY_UI.header.sectionTag.paddingY}px`,
+                  fontSize: `${STORY_UI.header.sectionTag.fontSize}px`,
+                  transform: `translate(-50%, 0) translate(${STORY_UI.header.sectionTag.x}px, ${STORY_UI.header.sectionTag.y}px)`,
+                  color: '#FFFFFF',
+                  whiteSpace: 'nowrap',
+                  fontWeight: '500',
+                }}
+              >
+                Сдача крови
+              </div>
+            </div>
           </div>
         </div>
 
-        <h1
-          className="mt-5 text-center font-bold tracking-tight text-slate-900"
+        {/* Прокручиваемая область */}
+        <div
           style={{
-            fontSize: `${STORY_UI.title.fontSize}px`,
-            transform: `translate(${STORY_UI.title.x}px, ${STORY_UI.title.y}px)`,
-            marginTop: `${STORY_UI.title.marginTop}px`,
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            padding: '0 0 24px',
           }}
         >
-          Социстория “Сдача крови”
-        </h1>
+          <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 16px' }}>
+            <h1
+              className="text-center font-bold tracking-tight text-slate-900"
+              style={{
+                fontSize: `${STORY_UI.title.fontSize}px`,
+                transform: `translate(${STORY_UI.title.x}px, ${STORY_UI.title.y}px)`,
+                marginTop: `${STORY_UI.title.marginTop}px`,
+              }}
+            >
+              Социстория “Сдача крови”
+            </h1>
 
-        <div className="mt-8.75 flex flex-1 min-h-0 flex-col">
-          <Slider slides={bloodSlides} />
+            <div className="mt-6 flex flex-1 min-h-0 flex-col">
+              <Slider slides={bloodSlides} />
+            </div>
+          </div>
         </div>
       </div>
     </div>

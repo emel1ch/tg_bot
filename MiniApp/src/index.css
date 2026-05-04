@@ -9,11 +9,39 @@
 }
 
 @layer base {
-  h1, h2, p { @apply m-0 p-0; }
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100dvh;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: #FFFEFA;
+  }
+
+  h1, h2, p {
+    @apply m-0 p-0;
+  }
 
   button {
     @apply border-none p-0 m-0 bg-transparent cursor-pointer outline-none;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  img,
+  svg {
+    display: block;
+    max-width: 100%;
   }
 }
 

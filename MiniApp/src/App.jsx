@@ -103,7 +103,7 @@ export default function App() {
         <div
           className="fixed right-4 z-50 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200"
           style={{
-            top: '50%',
+            top: '40%',
             animation: toastPhase === 'enter'
               ? 'dentistToastIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both'
               : 'dentistToastOut 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both',

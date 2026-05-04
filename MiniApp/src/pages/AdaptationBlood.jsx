@@ -102,118 +102,145 @@ export default function AdaptationBlood({ onNavigate, onBack }) {
   const primaryColor = '#18C6C8';
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', backgroundColor: '#FFFEFA', overflowX: 'hidden' }}>
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-          <button
-            onClick={onBack}
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              backgroundColor: '#D9FBF7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            <BackIcon />
-          </button>
+    <div style={{ height: '100dvh', width: '100%', backgroundColor: '#FFFEFA', overflow: 'hidden' }}>
+      <div
+        style={{
+          height: '100%',
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Шапка — не скроллится */}
+        <div style={{ flexShrink: 0, padding: '20px 16px 16px' }}>
+          <div style={{ maxWidth: '480px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                onClick={onBack}
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  backgroundColor: '#D9FBF7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: 'none',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <BackIcon />
+              </button>
 
-          <div
-            style={{
-              flex: 1,
-              backgroundColor: primaryColor,
-              color: '#ffffff',
-              fontSize: '17px',
-              fontWeight: '600',
-              padding: '12px 16px',
-              borderRadius: '9999px',
-              textAlign: 'center',
-            }}
-          >
-            Сдача анализа крови
+              <div
+                style={{
+                  flex: 1,
+                  backgroundColor: primaryColor,
+                  color: '#ffffff',
+                  fontSize: '17px',
+                  fontWeight: '500',
+                  padding: '12px 16px',
+                  borderRadius: '9999px',
+                  textAlign: 'center',
+                }}
+              >
+                Сдача анализа крови
+              </div>
+            </div>
           </div>
         </div>
 
-        <h3 style={{ fontSize: '19px', fontWeight: '700', color: '#1f2937', marginTop: '4px', marginBottom: '20px' }}>
-          Материалы для адаптации
-        </h3>
+        {/* Прокручиваемая область на всю ширину экрана */}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            padding: '0 0 24px',
+          }}
+        >
+          <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 16px' }}>
+            <h3 style={{ fontSize: '19px', fontWeight: '700', color: '#1f2937', marginTop: '4px', marginBottom: '20px' }}>
+              Материалы для адаптации
+            </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {materials.map((item) => (
-            <div
-              key={item.kind}
-              style={{
-                backgroundColor: '#FFFFFF',
-                borderRadius: '22px',
-                border: `2px solid ${primaryColor}`,
-                padding: '16px',
-              }}
-            >
-              <div style={{ display: 'flex', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {materials.map((item) => (
                 <div
+                  key={item.kind}
                   style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '18px',
-                    backgroundColor: '#EEFDFD',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: primaryColor,
-                    flexShrink: 0,
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '22px',
+                    border: `2px solid ${primaryColor}`,
+                    padding: '16px',
                   }}
                 >
-                  {item.icon}
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <div
+                      style={{
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '18px',
+                        backgroundColor: '#EEFDFD',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: primaryColor,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {item.icon}
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: primaryColor }}>
+                        {item.title}
+                      </div>
+
+                      <div style={{ fontSize: '16px', color: '#4b5563', marginTop: '4px', fontWeight: '600' }}>
+                        {item.subtitle}
+                      </div>
+
+                      <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+                        {item.desc}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
+                        <ClockIcon />
+                        <span style={{ fontSize: '12px' }}>{item.time}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                    <button
+                      onClick={item.onClick}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: primaryColor,
+                        borderRadius: '9999px',
+                        padding: '8px 24px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#ffffff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 3px 10px rgba(24, 198, 200, 0.35)',
+                      }}
+                    >
+                      <PlayIcon />
+                      Начать
+                    </button>
+                  </div>
                 </div>
-
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: primaryColor }}>
-                    {item.title}
-                  </div>
-
-                  <div style={{ fontSize: '16px', color: '#4b5563', marginTop: '4px', fontWeight: '600' }}>
-                    {item.subtitle}
-                  </div>
-
-                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
-                    {item.desc}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', color: '#9ca3af' }}>
-                    <ClockIcon />
-                    <span style={{ fontSize: '12px' }}>{item.time}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
-                <button
-                  onClick={item.onClick}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor: primaryColor,
-                    borderRadius: '9999px',
-                    padding: '8px 24px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#ffffff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    boxShadow: '0 3px 10px rgba(24, 198, 200, 0.35)',
-                  }}
-                >
-                  <PlayIcon />
-                  Начать
-                </button>
-              </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       </div>
     </div>
