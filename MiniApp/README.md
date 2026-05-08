@@ -1,16 +1,80 @@
-# React + Vite
+# MiniApp
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend и backend для Telegram Mini App.
 
-Currently, two official plugins are available:
+## Стек
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React 19 + Vite 7
+- Tailwind CSS 4
+- Express (server)
+- YooKassa API
 
-## React Compiler
+## Установка
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```powershell
+cd MiniApp
+npm ci
+npm --prefix server ci
+copy .env.example .env
+copy server\.env.example server\.env
+```
 
-## Expanding the ESLint configuration
+## Переменные окружения
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+`MiniApp/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:3000
+```
+
+`MiniApp/server/.env`:
+
+```env
+PORT=3000
+YOOKASSA_SHOP_ID=
+YOOKASSA_SECRET_KEY=
+YOOKASSA_RETURN_URL=https://t.me
+DENTIST_PRICE=69
+DENTIST_PROMO_CODES=
+ADMIN_TELEGRAM_IDS=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_INIT_DATA_MAX_AGE_SEC=86400
+DEFAULT_PAYMENT_DESCRIPTION=MiniApp access payment
+BOT_DATABASE_URL=
+```
+
+Админ-доступ:
+- MiniApp server сначала валидирует Telegram `initData`.
+- Затем проверяет админ-права в БД Telegram-бота (`users.is_root`) через `BOT_DATABASE_URL`.
+- `ADMIN_TELEGRAM_IDS` остаётся как резервный fallback.
+
+Важно по строке подключения:
+- Если у бота `DATABASE_URL` в формате `postgresql+asyncpg://...`, в `BOT_DATABASE_URL` для Node.js нужно указывать `postgresql://...` (без `+asyncpg`).
+
+## Запуск
+
+Оба сервиса:
+
+```powershell
+npm run dev:all
+```
+
+Отдельно:
+
+```powershell
+npm run dev:host
+npm run dev:server
+```
+
+Туннель:
+
+```powershell
+npm run tunnel:front
+```
+
+## Проверка
+
+```powershell
+npm run lint
+npm run build
+```

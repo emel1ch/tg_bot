@@ -55,6 +55,17 @@ export default function Slider({ slides = [] }) {
     })
   }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      next()
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      prev()
+    }
+  }
+
   if (!slides || slides.length === 0) {
     return (
       <div className="rounded-3xl bg-white p-4 text-center text-sm text-slate-500 shadow-sm ring-1 ring-slate-200">
@@ -91,7 +102,14 @@ export default function Slider({ slides = [] }) {
       style={{
         marginTop: `${SLIDER_UI.layout.offsetY}px`,
       }}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      role="region"
+      aria-label="Слайдер социальной истории"
     >
+      <span className="sr-only" aria-live="polite">
+        Слайд {index + 1} из {slides.length}
+      </span>
       <div
         className="overflow-hidden bg-[#FFFEFA]"
         style={{
@@ -116,7 +134,7 @@ export default function Slider({ slides = [] }) {
               className="mx-auto overflow-hidden bg-white"
               style={{
                 width: `min(100%, ${SLIDER_UI.imageBox.width}px)`,
-                height: `${SLIDER_UI.imageBox.height}px`,
+                height: `clamp(220px, 52dvh, ${SLIDER_UI.imageBox.height}px)`,
                 borderRadius: `${SLIDER_UI.imageBox.radius}px`,
               }}
             >
@@ -125,6 +143,8 @@ export default function Slider({ slides = [] }) {
                   src={current.image}
                   alt=""
                   className="block h-full w-full object-contain"
+                  decoding="async"
+                  loading="lazy"
                   draggable="false"
                 />
               ) : null}
@@ -176,6 +196,7 @@ export default function Slider({ slides = [] }) {
           type="button"
           onClick={prev}
           disabled={index === 0}
+          aria-label="Предыдущий слайд"
           className="rounded-2xl border border-slate-300 bg-white px-4 font-semibold text-slate-700 shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           style={{
             height: `${SLIDER_UI.buttons.height}px`,
@@ -198,6 +219,7 @@ export default function Slider({ slides = [] }) {
           type="button"
           onClick={next}
           disabled={index === slides.length - 1}
+          aria-label="Следующий слайд"
           className="rounded-2xl bg-[#18C6C8] px-4 font-semibold shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           style={{
             height: `${SLIDER_UI.buttons.height}px`,

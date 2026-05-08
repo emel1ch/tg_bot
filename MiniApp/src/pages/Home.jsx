@@ -36,28 +36,45 @@ function CartIcon({ width = 16, height = 16, style = {}, className = '' }) {
   );
 }
 
-export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = false }) {
+export default function Home({
+  onNavigate,
+  onOpenDentistPay,
+  dentistUnlocked = false,
+  isAdmin = false,
+  onOpenAdmin,
+}) {
   const dentistCard = { width: 440, height: 270 };
   const bloodCard = { width: 440, height: 270 };
   const cardsGapPx = 24;
 
   const dentistBadgeClass =
-    'inline-flex items-center rounded-full bg-[#FEF3C7] px-4 py-1 text-[18px] font-semibold text-[#F97316]';
+    'inline-flex h-10 items-center rounded-full bg-[#FEF3C7] px-4 text-[18px] font-semibold text-[#F97316]';
 
   const freeBadgeClass =
-    'inline-flex items-center rounded-full bg-[#E0F7FA] px-4 py-1 text-[16px] font-medium text-[#18C6C8]';
+    'inline-flex h-10 items-center rounded-full bg-[#E0F7FA] px-4 text-[16px] font-medium text-[#18C6C8]';
 
   const paidButtonClass =
-    'inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#F97316] to-[#EA580C] px-5 py-2.5 text-[14.5px] font-semibold text-white shadow-sm transition active:scale-[0.98]';
+    'inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#F97316] to-[#EA580C] px-5 text-[14.5px] font-semibold text-white shadow-sm transition active:scale-[0.98]';
 
   const freeButtonClass =
-    'inline-flex items-center gap-2 rounded-xl bg-[#18C6C8] px-6 py-2.5 text-[14.5px] font-semibold text-white shadow-sm transition active:scale-[0.98]';
+    'inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#18C6C8] px-6 text-[14.5px] font-semibold text-white shadow-sm transition active:scale-[0.98]';
 
   return (
     <div className="min-h-screen w-full bg-[#FFFEFA] px-4 py-8">
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
+      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center">
         <div className="flex w-full max-w-md flex-col items-center">
           <div className="mb-6 w-full">
+            {isAdmin ? (
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => onOpenAdmin?.()}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition active:scale-[0.98]"
+                >
+                  Админ: промокоды
+                </button>
+              </div>
+            ) : null}
             <div
               className="mb-4 flex items-center justify-center text-white"
               style={{
@@ -110,12 +127,12 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
               subtitleWrapStyle={{ top: '13px', left: '10px' }}
               materialsWrapStyle={{ top: '18px', left: '10px' }}
               footerLeft={dentistUnlocked ? <div className={freeBadgeClass}>Доступ открыт</div> : <div className={dentistBadgeClass}>69 ₽</div>}
-              footerLeftWrapStyle={{ top: '-5px', left: '10px' }}
+              footerLeftWrapStyle={{ top: '0px', left: '10px' }}
               footerRightLabel={dentistUnlocked ? 'Начать' : 'Купить'}
               footerRightIcon={dentistUnlocked ? null : <CartIcon className="text-white" />}
               footerRightClassName={dentistUnlocked ? freeButtonClass : paidButtonClass}
-              footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: dentistUnlocked ? '12px 24px' : '12px 20px' }}
-              footerRightWrapStyle={{ top: '0px', left: '-5px' }}
+              footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: dentistUnlocked ? '0 24px' : '0 20px' }}
+              footerRightWrapStyle={{ top: '0px', left: '0px' }}
               onClick={() => dentistUnlocked ? onNavigate('adaptation-dentist') : onOpenDentistPay?.()}
             />
 
@@ -136,11 +153,11 @@ export default function Home({ onNavigate, onOpenDentistPay, dentistUnlocked = f
               subtitleWrapStyle={{ top: '13px', left: '10px' }}
               materialsWrapStyle={{ top: '18px', left: '10px' }}
               footerLeft={<div className={freeBadgeClass}>Бесплатно</div>}
-              footerLeftWrapStyle={{ top: '-5px', left: '10px' }}
+              footerLeftWrapStyle={{ top: '0px', left: '10px' }}
               footerRightLabel="Начать"
               footerRightClassName={freeButtonClass}
-              footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: '12px 24px' }}
-              footerRightWrapStyle={{ top: '0px', left: '-5px' }}
+              footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: '0 24px' }}
+              footerRightWrapStyle={{ top: '0px', left: '0px' }}
               onClick={() => onNavigate('adaptation')}
             />
           </div>

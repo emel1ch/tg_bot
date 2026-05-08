@@ -36,6 +36,12 @@
   button {
     @apply border-none p-0 m-0 bg-transparent cursor-pointer outline-none;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid #14B8A6;
+    outline-offset: 2px;
   }
 
   img,
@@ -52,4 +58,43 @@
 
 .fly-up {
   animation: flyUp var(--fly-dur, 700ms) linear forwards;
+}
+
+@layer components {
+  .ui-page-bg {
+    @apply bg-[#FFFEFA];
+  }
+
+  .ui-surface-card {
+    @apply rounded-3xl bg-white shadow-sm ring-1 ring-slate-200;
+  }
+
+  .ui-primary-btn {
+    @apply rounded-2xl bg-[#18C6C8] px-5 py-4 text-base font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .ui-secondary-btn {
+    @apply rounded-2xl border border-slate-300 bg-[#FFFEFA] px-5 py-4 text-base font-medium text-slate-700 shadow-sm transition active:scale-[0.99];
+  }
+
+  .ui-back-circle {
+    @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-none bg-[#D9FBF7] text-[#0F172A] transition active:scale-95;
+  }
+
+  .ui-pill-title {
+    @apply flex flex-1 items-center justify-center rounded-full bg-[#18C6C8] px-4 py-3 text-center text-[17px] font-medium text-white shadow-sm;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
 }

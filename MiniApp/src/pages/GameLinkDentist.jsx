@@ -23,7 +23,7 @@ export default function GameLinkDentist({ onBack }) {
       <button
         type="button"
         onClick={() => openExternal(DENTIST_GAME_URL)}
-        className="rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white"
+        className="ui-primary-btn w-full sm:w-auto"
       >
         Открыть игру
       </button>

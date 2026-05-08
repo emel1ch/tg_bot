@@ -78,7 +78,7 @@ export default function Adaptation({ onNavigate, onBack }) {
   const handleLinkClick = (url) => {
     const tg = window.Telegram?.WebApp;
     if (tg?.openLink) tg.openLink(url);
-    else window.open(url, '_blank');
+    else window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const materials = [
@@ -144,34 +144,14 @@ export default function Adaptation({ onNavigate, onBack }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <button
                 onClick={onBack}
-                style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '50%',
-                  backgroundColor: '#D9FBF7',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: 'none',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
+                type="button"
+                aria-label="Назад"
+                className="ui-back-circle"
               >
                 <BackIcon />
               </button>
 
-              <div
-                style={{
-                  flex: 1,
-                  backgroundColor: primaryColor,
-                  color: '#ffffff',
-                  fontSize: '17px',
-                  fontWeight: '500',
-                  padding: '12px 16px',
-                  borderRadius: '9999px',
-                  textAlign: 'center',
-                }}
-              >
+              <div className="ui-pill-title">
                 Поход к стоматологу
               </div>
             </div>
@@ -238,6 +218,7 @@ export default function Adaptation({ onNavigate, onBack }) {
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
                     <button
                       onClick={item.onClick}
+                      type="button"
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',

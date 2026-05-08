@@ -12,17 +12,17 @@ export default function Recommendations({ onBack }) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#FFFEFA] px-4 py-5">
+    <div className="ui-page-bg min-h-screen w-full px-4 py-5">
       <div className="mx-auto flex w-full max-w-md flex-col">
         <button
           type="button"
           onClick={onBack}
-          className="mb-4 w-fit rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition active:scale-95"
+          className="mb-4 w-fit rounded-full bg-[#D9FBF7] px-4 py-2 text-sm font-semibold text-slate-700 transition active:scale-95"
         >
           ← Назад
         </button>
 
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="ui-surface-card p-6">
           <h1 className="text-2xl font-bold text-slate-900">
             Рекомендации для родителей
           </h1>
@@ -41,7 +41,7 @@ export default function Recommendations({ onBack }) {
           <button
             type="button"
             onClick={handleDownload}
-            className="mt-6 w-full rounded-2xl bg-red-500 px-5 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-600 active:scale-[0.99]"
+            className="ui-primary-btn mt-6 w-full"
           >
             Скачать PDF-инструкцию
           </button>

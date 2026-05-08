@@ -5,6 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --host",
+    "dev:server": "npm --prefix server run dev",
+    "dev:all": "concurrently -n FRONT,BACK -c cyan,magenta \"npm run dev:host\" \"npm run dev:server\"",
+    "tunnel:front": "npx localtunnel --port 5173 --subdomain idukvrachu-miniapp",
+    "tunnel:cf": "cloudflared tunnel --url http://localhost:5173 --no-autoupdate --protocol http2",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -27,6 +32,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "concurrently": "^9.2.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "vite": "^7.3.1"

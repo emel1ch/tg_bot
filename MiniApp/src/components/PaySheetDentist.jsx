@@ -37,6 +37,7 @@ export default function PaySheetDentist({
   const [translateY, setTranslateY] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
+  const [isPaying, setIsPaying] = useState(false)
 
   const dragRef = useRef({
     startY: 0,
@@ -58,6 +59,7 @@ export default function PaySheetDentist({
     setTranslateY(0)
     setIsDragging(false)
     setIsClosing(false)
+    setIsPaying(false)
   }
 
   const requestClose = () => {
@@ -88,7 +90,9 @@ export default function PaySheetDentist({
       setStatusType(result.ok ? 'success' : 'error')
       if (result.ok) {
         setPromoCode('')
-        handleSuccess(result.message || 'Промокод принят')
+        if (result.unlocksAccess) {
+          handleSuccess(result.message || 'Промокод принят')
+        }
       }
     } catch {
       setStatus('Промокод не подошёл')
@@ -102,6 +106,8 @@ export default function PaySheetDentist({
   }
 
   const handlePay = async () => {
+    if (isPaying) return
+    setIsPaying(true)
     try {
       const result = await Promise.resolve(onPay?.() ?? { ok: true, message: 'Оплата прошла успешно' })
       if (result && result.ok === false) {
@@ -113,6 +119,8 @@ export default function PaySheetDentist({
     } catch {
       setStatus('Оплата не прошла')
       setStatusType('error')
+    } finally {
+      setIsPaying(false)
     }
   }
 
@@ -124,7 +132,7 @@ export default function PaySheetDentist({
     setIsDragging(true)
     dragRef.current.startY = e.clientY
     dragRef.current.deltaY = 0
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ignore unsupported pointer capture */ }
   }
 
   const handlePointerMove = (e) => {
@@ -157,7 +165,7 @@ export default function PaySheetDentist({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-99999 flex items-end justify-center bg-black/40"
+      className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/40"
       onClick={handleClose}
     >
       <div
@@ -198,7 +206,7 @@ export default function PaySheetDentist({
           </ul>
         </div>
 
-        {/* Поле промокода и кнопка "Применить" – если хотите убрать, закомментируйте этот блок */}
+        {/* Поле промокода и кнопка "Применить" */}
         <form onSubmit={handlePromoSubmit} className="mt-5">
           <div className="flex items-center gap-2 rounded-2xl bg-[#E0F7FA] p-2">
             <input
@@ -228,9 +236,10 @@ export default function PaySheetDentist({
         <button
           type="button"
           onClick={handlePay}
-          className="mt-5 w-full rounded-2xl bg-[#18C6C8] px-5 py-4 text-base font-medium text-white transition active:scale-[0.99]"
+          disabled={isPaying}
+          className="mt-5 w-full rounded-2xl bg-[#18C6C8] px-5 py-4 text-base font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70 active:scale-[0.99]"
         >
-          Оплатить {price} ₽
+          {isPaying ? 'Обработка...' : `Оплатить ${price} ₽`}
         </button>
       </div>
     </div>,

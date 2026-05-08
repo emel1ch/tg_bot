@@ -41,12 +41,13 @@ export default function RecommendationsDentist({ onBack }) {
             <button
               onClick={onBack}
               type="button"
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-none bg-[#D9FBF7] text-black"
+              aria-label="Назад"
+              className="ui-back-circle"
             >
               <BackIcon />
             </button>
 
-            <div className="flex-1 rounded-full bg-[#18C6C8] px-6 py-3 text-center text-[17px] font-semibold text-white shadow-sm">
+            <div className="ui-pill-title">
               Поход к стоматологу
             </div>
           </div>
@@ -131,12 +132,15 @@ export default function RecommendationsDentist({ onBack }) {
         </div>
 
         {/* Нижняя панель */}
-        <div className="shrink-0 bg-[#FFFEFA] px-4 py-4">
+        <div
+          className="shrink-0 bg-[#FFFEFA] px-4 pt-4"
+          style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+        >
           <div className="mx-auto flex w-full max-w-md gap-3">
             <button
               onClick={onBack}
               type="button"
-              className="flex-1 rounded-2xl border border-gray-300 bg-[#FFFEFA] py-4 font-medium text-gray-700 shadow-sm transition active:bg-gray-50"
+              className="ui-secondary-btn flex-1"
             >
               Закрыть
             </button>
@@ -144,7 +148,7 @@ export default function RecommendationsDentist({ onBack }) {
             <button
               onClick={handleDownload}
               type="button"
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#18C6C8] py-4 font-medium text-white transition active:bg-[#16b3b5]"
+              className="ui-primary-btn flex flex-1 items-center justify-center gap-2"
             >
               <Download size={20} />
               Скачать
