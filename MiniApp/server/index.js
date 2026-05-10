@@ -7,10 +7,14 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ROOT_ENV_PATH = path.resolve(__dirname, '..', '..', '.env');
+const LOCAL_ENV_PATH = path.resolve(__dirname, '.env');
+
+// Load shared root env first, then local server env as additive config.
+dotenv.config({ path: ROOT_ENV_PATH });
+dotenv.config({ path: LOCAL_ENV_PATH });
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -30,12 +34,16 @@ const TELEGRAM_INIT_DATA_MAX_AGE_SEC = Number(process.env.TELEGRAM_INIT_DATA_MAX
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const BOT_DATABASE_URL = String(process.env.BOT_DATABASE_URL || process.env.DATABASE_URL || '').trim();
 
-const ADMIN_TELEGRAM_IDS = new Set(
-  String(process.env.ADMIN_TELEGRAM_IDS || '')
+const parseTelegramIdList = (rawValue) =>
+  String(rawValue || '')
     .split(',')
     .map((id) => id.trim())
-    .filter(Boolean)
-);
+    .filter((id) => /^\d+$/.test(id));
+
+const ADMIN_TELEGRAM_IDS = new Set([
+  ...parseTelegramIdList(process.env.ADMIN_TELEGRAM_IDS),
+  ...parseTelegramIdList(process.env.SUPERADMIN_ID),
+]);
 
 const DEFAULT_PROMO_ENTRIES = Array.from(
   new Set(
