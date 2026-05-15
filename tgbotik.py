@@ -14,7 +14,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
-from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
+from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID, ADMIN_TELEGRAM_IDS
 from aiogram.filters import CommandObject
 from database import date_has_slots
 from database import get_all_users, grant_admin_rights
@@ -282,7 +282,7 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
                               url="https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k")],
-        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://green-olives-pick.loca.lt"))],
+        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://b4424c18345afb.lhr.life"))],
         [InlineKeyboardButton(text="📅 Запись к врачу", callback_data="menu_book_appointment")],
         [InlineKeyboardButton(text="📋 Мои записи", callback_data="menu_my_records")],
         [InlineKeyboardButton(text="💬 Написать нам", callback_data="menu_support")]
@@ -980,8 +980,8 @@ class AdminState(StatesGroup):
 
 class IsAdmin(BaseFilter):
     async def __call__(self, message: Message) -> bool:
-        # 1. Суперадмин из конфига пускается всегда
-        if message.from_user.id == SUPERADMIN_ID:
+        # 1. Админы из конфига (включая SUPERADMIN_ID) пускаются всегда
+        if message.from_user.id in ADMIN_TELEGRAM_IDS:
             return True
 
         # 2. Остальные проверяются по базе данных
