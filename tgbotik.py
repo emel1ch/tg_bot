@@ -11,7 +11,6 @@ from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
 from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
 from database import date_has_slots
 from database import get_all_users, grant_admin_rights
