@@ -1,21 +1,18 @@
 import re
-import os
 import asyncio
 import calendar
 from datetime import datetime, timezone, timedelta
 from database import async_session
 from database import Doctor
-from database import deactivate_doctor
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command, StateFilter, BaseFilter
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
+from aiogram.filters import CommandStart, Command, BaseFilter
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
-from aiogram.filters import CommandObject
 from database import date_has_slots
 from database import get_all_users, grant_admin_rights
 from database import (
@@ -46,13 +43,12 @@ from database import (
     create_clinic, get_clinics_by_city, delete_clinic
 )
 
-# 2. Создаем кастомный сервер API
-custom_server = TelegramAPIServer.from_base(WORKER_URL)
 
-# 3. Подключаем этот сервер к aiohttp сессии
-session = AiohttpSession(api=custom_server)
 
-# 4. Инициализируем бота с этой сессией
+# 1. Подключаем этот сервер к aiohttp сессии
+session = AiohttpSession(proxy=WORKER_URL)
+
+# 2. Инициализируем бота с этой сессией
 bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
