@@ -295,7 +295,7 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
                               url="https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k")],
-        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://lglph-95-85-230-68.run.pinggy-free.link"))],
+        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://idykvrachy.pro/"))],
         [InlineKeyboardButton(text="📅 Запись к врачу", callback_data="menu_book_appointment")],
         [InlineKeyboardButton(text="📋 Мои записи", callback_data="menu_my_records")],
         [InlineKeyboardButton(text="💬 Написать нам", callback_data="menu_support")]
