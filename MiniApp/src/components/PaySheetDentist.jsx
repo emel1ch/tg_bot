@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { DENTIST_PRICE } from '../data/dentistConfig'
 
 const SHEET_ANIMATION_MS = 260
+const SHEET_DISMISS_DISTANCE = 64
 
 function CheckIcon({ className = '' }) {
   return (
@@ -157,7 +158,7 @@ export default function PaySheetDentist({
   const handlePointerUp = () => {
     if (!isDragging) return
     setIsDragging(false)
-    if (dragRef.current.deltaY > 110) requestClose()
+    if (dragRef.current.deltaY >= SHEET_DISMISS_DISTANCE) requestClose()
     else setTranslateY(0)
   }
 
