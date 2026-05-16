@@ -24,6 +24,7 @@ const API_BASE_URL = (
 const PAYMENT_POLL_INTERVAL_MS = 2500
 const PAYMENT_POLL_TIMEOUT_MS = 180000
 const LOCAL_USER_STORAGE_KEY = 'miniapp-user-id-v1'
+let runtimeUserId = ''
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const parsePriceValue = (value) => {
@@ -38,18 +39,34 @@ const safeRandomUuid = () => {
   return `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+const readLocalUserId = () => {
+  try {
+    return window.localStorage.getItem(LOCAL_USER_STORAGE_KEY)
+  } catch {
+    return ''
+  }
+}
+
+const writeLocalUserId = (userId) => {
+  try {
+    window.localStorage.setItem(LOCAL_USER_STORAGE_KEY, userId)
+  } catch {
+    // Telegram WebView or private browsing can block storage; keep runtime id for this session.
+  }
+}
+
 const resolveMiniAppUserId = () => {
   const telegramUserId = window?.Telegram?.WebApp?.initDataUnsafe?.user?.id
   if (telegramUserId != null) {
     return `tg:${telegramUserId}`
   }
 
-  const existing = window.localStorage.getItem(LOCAL_USER_STORAGE_KEY)
+  const existing = readLocalUserId()
   if (existing) return existing
 
-  const generated = `web:${safeRandomUuid()}`
-  window.localStorage.setItem(LOCAL_USER_STORAGE_KEY, generated)
-  return generated
+  if (!runtimeUserId) runtimeUserId = `web:${safeRandomUuid()}`
+  writeLocalUserId(runtimeUserId)
+  return runtimeUserId
 }
 
 const resolveTelegramInitData = () => {
