@@ -159,7 +159,7 @@ export default function AdminPromoPage({ onBack, apiBaseUrl, initDataRaw }) {
 
           <div className="mt-4 space-y-3">
             {entries.map((entry) => (
-              <div key={entry.id} className="grid grid-cols-[1fr_104px_40px] items-center gap-2">
+              <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_88px_32px] items-center gap-2">
                 <input
                   value={entry.code}
                   onChange={(e) => updateEntry(entry.id, { code: e.target.value.toUpperCase() })}
