@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DENTIST_PRICE } from '../data/dentistConfig'
 
+const SHEET_ANIMATION_MS = 260
+
 function CheckIcon({ className = '' }) {
   return (
     <svg
@@ -36,6 +38,7 @@ export default function PaySheetDentist({
   const [statusType, setStatusType] = useState('')
   const [translateY, setTranslateY] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const [isVisible, setIsVisible] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
   const [isPaying, setIsPaying] = useState(false)
 
@@ -52,33 +55,42 @@ export default function PaySheetDentist({
     }
   }, [])
 
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const frame = window.requestAnimationFrame(() => setIsVisible(true))
+    return () => window.cancelAnimationFrame(frame)
+  }, [isOpen])
+
   const resetLocalState = () => {
     setPromoCode('')
     setStatus('')
     setStatusType('')
     setTranslateY(0)
     setIsDragging(false)
+    setIsVisible(false)
     setIsClosing(false)
     setIsPaying(false)
   }
 
-  const requestClose = () => {
+  const requestClose = (afterClose) => {
     if (isClosing) return
     setIsClosing(true)
+    setIsVisible(false)
     setIsDragging(false)
     setTranslateY(0)
     closeTimerRef.current = window.setTimeout(() => {
       resetLocalState()
       onClose?.()
-    }, 220)
+      afterClose?.()
+    }, SHEET_ANIMATION_MS)
   }
 
   const handleClose = () => requestClose()
   const handleSuccess = (message) => {
     setStatus(message || '')
     setStatusType('success')
-    onSuccess?.()
-    requestClose()
+    requestClose(() => onSuccess?.())
   }
 
   const handleApplyPromo = async () => {
@@ -159,20 +171,29 @@ export default function PaySheetDentist({
     'Методические рекомендации для родителей',
   ]
 
-  const panelTransform = isClosing
+  const panelTransform = isClosing || !isVisible
     ? 'translateY(calc(100% + 24px))'
     : `translateY(${translateY}px)`
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/40"
+      className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/40 transition-opacity ease-out"
+      style={{
+        opacity: isVisible && !isClosing ? 1 : 0,
+        transitionDuration: `${SHEET_ANIMATION_MS}ms`,
+      }}
       onClick={handleClose}
     >
       <div
         className={`relative z-10 w-full max-w-md rounded-t-4xl bg-white px-5 pb-5 pt-3 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] ${
-          isDragging ? 'transition-none' : 'transition-transform duration-300 ease-out'
+          isDragging ? 'transition-none' : 'transition-transform ease-out'
         }`}
-        style={{ transform: panelTransform, touchAction: 'none' }}
+        style={{
+          transform: panelTransform,
+          transitionDuration: `${SHEET_ANIMATION_MS}ms`,
+          touchAction: 'none',
+          willChange: 'transform',
+        }}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

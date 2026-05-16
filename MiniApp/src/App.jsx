@@ -1,5 +1,6 @@
 // webapp/src/App.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import Welcome from './components/Welcome'
 import Home from './pages/Home'
 import Adaptation from './pages/Adaptation'
@@ -7,6 +8,7 @@ import AdaptationBlood from './pages/AdaptationBlood'
 import Recommendations from './pages/Recommendations'
 import Story from './pages/Story'
 import PaySheetDentist from './components/PaySheetDentist'
+import AppWindow from './components/AppWindow'
 import AdminPromoPage from './pages/AdminPromoPage'
 
 import StoryDentist from './pages/StoryDentist'
@@ -194,6 +196,47 @@ export default function App() {
 
   const navigate = (to) => setRoute(to)
 
+  const renderRoute = () => {
+    if (route === 'home') {
+      return (
+        <Home
+          onNavigate={navigate}
+          onOpenDentistPay={() => setIsDentistPayOpen(true)}
+          dentistUnlocked={dentistUnlocked}
+          isAdmin={isAdmin}
+          onOpenAdmin={() => setRoute('admin-promos')}
+        />
+      )
+    }
+
+    if (route === 'adaptation') {
+      return <AdaptationBlood onNavigate={navigate} onBack={() => setRoute('home')} />
+    }
+
+    if (route === 'adaptation-dentist') {
+      return <Adaptation onNavigate={navigate} onBack={() => setRoute('home')} />
+    }
+
+    if (route === 'story') return <Story onBack={() => setRoute('adaptation')} />
+    if (route === 'info') return <Recommendations onBack={() => setRoute('adaptation')} />
+
+    if (route === 'admin-promos') {
+      return (
+        <AdminPromoPage
+          onBack={() => setRoute('home')}
+          apiBaseUrl={API_BASE_URL}
+          initDataRaw={telegramInitDataRaw}
+        />
+      )
+    }
+
+    if (route === 'story-dentist') return <StoryDentist onBack={() => setRoute('adaptation-dentist')} />
+    if (route === 'game-dentist') return <GameLinkDentist onBack={() => setRoute('adaptation-dentist')} />
+    if (route === 'recommendations-dentist') return <RecommendationsDentist onBack={() => setRoute('adaptation-dentist')} />
+
+    return null
+  }
+
   const handlePromoApply = async (code) => {
     if (!API_BASE_URL) {
       return { ok: false, message: 'Не задан VITE_API_BASE_URL для проверки промокода' }
@@ -294,36 +337,11 @@ export default function App() {
   return (
     <>
       <div className="min-h-screen w-full bg-white">
-        {route === 'home' && (
-          <Home
-            onNavigate={navigate}
-            onOpenDentistPay={() => setIsDentistPayOpen(true)}
-            dentistUnlocked={dentistUnlocked}
-            isAdmin={isAdmin}
-            onOpenAdmin={() => setRoute('admin-promos')}
-          />
-        )}
-
-        {route === 'adaptation' && (
-          <AdaptationBlood onNavigate={navigate} onBack={() => setRoute('home')} />
-        )}
-
-        {route === 'adaptation-dentist' && (
-          <Adaptation onNavigate={navigate} onBack={() => setRoute('home')} />
-        )}
-
-        {route === 'story' && <Story onBack={() => setRoute('adaptation')} />}
-        {route === 'info' && <Recommendations onBack={() => setRoute('adaptation')} />}
-        {route === 'admin-promos' && (
-          <AdminPromoPage
-            onBack={() => setRoute('home')}
-            apiBaseUrl={API_BASE_URL}
-            initDataRaw={telegramInitDataRaw}
-          />
-        )}
-        {route === 'story-dentist' && <StoryDentist onBack={() => setRoute('adaptation-dentist')} />}
-        {route === 'game-dentist' && <GameLinkDentist onBack={() => setRoute('adaptation-dentist')} />}
-        {route === 'recommendations-dentist' && <RecommendationsDentist onBack={() => setRoute('adaptation-dentist')} />}
+        <AnimatePresence mode="wait">
+          <AppWindow key={route}>
+            {renderRoute()}
+          </AppWindow>
+        </AnimatePresence>
 
         <PaySheetDentist
           isOpen={isDentistPayOpen}
