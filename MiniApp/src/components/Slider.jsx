@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 const SLIDER_UI = {
   layout: {
@@ -33,7 +34,6 @@ const SLIDER_UI = {
     fontSize: 14,
     leftButtonWidth: 0,
     rightButtonWidth: 0,
-    arrowGap: 14,
     bottomPadding: 16,
   },
 }
@@ -75,6 +75,10 @@ export default function Slider({ slides = [] }) {
   }
 
   const current = slides[index]
+  const preloadImages = [index + 1, index + 2, index - 1]
+    .filter((slideIndex) => slideIndex >= 0 && slideIndex < slides.length)
+    .map((slideIndex) => slides[slideIndex]?.image)
+    .filter(Boolean)
 
   const cardVariants = {
     enter: (dir) => ({
@@ -110,6 +114,18 @@ export default function Slider({ slides = [] }) {
       <span className="sr-only" aria-live="polite">
         Слайд {index + 1} из {slides.length}
       </span>
+      <div aria-hidden="true" className="pointer-events-none absolute h-px w-px overflow-hidden opacity-0">
+        {preloadImages.map((image) => (
+          <img
+            key={image}
+            src={image}
+            alt=""
+            decoding="async"
+            loading="eager"
+            fetchPriority="low"
+          />
+        ))}
+      </div>
       <div
         className="overflow-hidden bg-[#FFFEFA]"
         style={{
@@ -144,7 +160,8 @@ export default function Slider({ slides = [] }) {
                   alt=""
                   className="block h-full w-full object-contain"
                   decoding="async"
-                  loading="lazy"
+                  loading="eager"
+                  fetchPriority="high"
                   draggable="false"
                 />
               ) : null}
@@ -197,7 +214,7 @@ export default function Slider({ slides = [] }) {
           onClick={prev}
           disabled={index === 0}
           aria-label="Предыдущий слайд"
-          className="rounded-2xl border border-slate-300 bg-white px-4 font-semibold text-slate-700 shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center justify-center gap-3 rounded-2xl border border-slate-300 bg-white px-4 font-semibold text-slate-700 shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           style={{
             height: `${SLIDER_UI.buttons.height}px`,
             borderRadius: `${SLIDER_UI.buttons.radius}px`,
@@ -207,12 +224,8 @@ export default function Slider({ slides = [] }) {
               : '48%',
           }}
         >
-          <span className="inline-flex items-center justify-center">
-            <span className="text-base leading-none">{'<'}</span>
-            <span style={{ marginLeft: `${SLIDER_UI.buttons.arrowGap}px` }}>
-              Назад
-            </span>
-          </span>
+          <ChevronLeft size={18} strokeWidth={2.4} aria-hidden="true" />
+          <span>Назад</span>
         </button>
 
         <button
@@ -220,7 +233,7 @@ export default function Slider({ slides = [] }) {
           onClick={next}
           disabled={index === slides.length - 1}
           aria-label="Следующий слайд"
-          className="rounded-2xl bg-[#18C6C8] px-4 font-semibold shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center justify-center gap-3 rounded-2xl bg-[#18C6C8] px-4 font-semibold text-white shadow-sm transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           style={{
             height: `${SLIDER_UI.buttons.height}px`,
             borderRadius: `${SLIDER_UI.buttons.radius}px`,
@@ -230,18 +243,8 @@ export default function Slider({ slides = [] }) {
               : '48%',
           }}
         >
-          <span className="inline-flex items-center justify-center">
-            <span style={{ color: '#FFFFFF' }}>Вперед</span>
-            <span
-              className="text-base leading-none"
-              style={{
-                marginLeft: `${SLIDER_UI.buttons.arrowGap}px`,
-                color: '#FFFFFF',
-              }}
-            >
-              {'>'}
-            </span>
-          </span>
+          <span>Вперед</span>
+          <ChevronRight size={18} strokeWidth={2.4} aria-hidden="true" />
         </button>
       </div>
     </div>

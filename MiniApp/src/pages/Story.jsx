@@ -1,5 +1,6 @@
 import React from 'react'
 import Slider from '../components/Slider'
+import BackArrowIcon from '../components/BackArrowIcon'
 import { bloodSlides } from '../data/bloodSlides'
 
 const STORY_UI = {
@@ -33,15 +34,7 @@ export default function Story({ onBack }) {
                 aria-label="Назад"
                 className="ui-back-circle"
               >
-                <span
-                  className="leading-none"
-                  style={{
-                    fontSize: '24px',
-                    color: '#0F172A',
-                  }}
-                >
-                  ←
-                </span>
+                <BackArrowIcon />
               </button>
 
               <div className="ui-pill-title whitespace-nowrap">

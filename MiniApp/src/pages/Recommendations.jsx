@@ -1,4 +1,5 @@
 import React from 'react'
+import BackArrowIcon from '../components/BackArrowIcon'
 
 export default function Recommendations({ onBack }) {
   const handleDownload = () => {
@@ -17,9 +18,10 @@ export default function Recommendations({ onBack }) {
         <button
           type="button"
           onClick={onBack}
-          className="mb-4 w-fit rounded-full bg-[#D9FBF7] px-4 py-2 text-sm font-semibold text-slate-700 transition active:scale-95"
+          className="ui-back-text-btn mb-4 w-fit"
         >
-          ← Назад
+          <BackArrowIcon size={18} />
+          <span>Назад</span>
         </button>
 
         <div className="ui-surface-card p-6">

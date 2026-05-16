@@ -216,8 +216,12 @@ export default function PaySheetDentist({
         <div className="mt-5">
           <div className="text-sm font-semibold text-slate-900">Что входит в курс:</div>
           <ul className="mt-3 space-y-2">
-            {courseItems.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-sm text-slate-700">
+            {courseItems.map((item, index) => (
+              <li
+                key={item}
+                className="ui-card-motion flex items-start gap-2 text-sm text-slate-700"
+                style={{ '--ui-card-delay': `${80 + index * 45}ms` }}
+              >
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#18C6C8] bg-transparent">
                   <CheckIcon className="h-3.5 w-3.5 text-[#18C6C8]" />
                 </span>

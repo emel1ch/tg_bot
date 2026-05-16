@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import BackArrowIcon from '../components/BackArrowIcon'
 
 const createEntry = (id, code = '', discountPercent = 0) => ({
   id,
@@ -146,7 +147,7 @@ export default function AdminPromoPage({ onBack, apiBaseUrl, initDataRaw }) {
             onClick={onBack}
             className="ui-back-circle"
           >
-            <span className="text-2xl leading-none">←</span>
+            <BackArrowIcon />
           </button>
           <div className="ui-pill-title">Админ панель</div>
         </div>

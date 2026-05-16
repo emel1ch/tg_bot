@@ -56,6 +56,17 @@
   100% { transform: translateY(-120vh); opacity: 0; }
 }
 
+@keyframes uiCardIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .fly-up {
   animation: flyUp var(--fly-dur, 700ms) linear forwards;
 }
@@ -71,19 +82,59 @@
 
   .ui-primary-btn {
     @apply rounded-2xl bg-[#18C6C8] px-5 py-4 text-base font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 180ms ease;
   }
 
   .ui-secondary-btn {
     @apply rounded-2xl border border-slate-300 bg-[#FFFEFA] px-5 py-4 text-base font-medium text-slate-700 shadow-sm transition active:scale-[0.99];
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 180ms ease;
   }
 
   .ui-back-circle {
-    @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-none bg-[#D9FBF7] text-[#0F172A] transition active:scale-95;
+    @apply inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-none bg-[#D9FBF7] text-[#0F172A] transition active:scale-95;
+    line-height: 0;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .ui-back-arrow {
+    display: block;
+    flex-shrink: 0;
+    transform: translateX(-1px);
+  }
+
+  .ui-back-text-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full bg-[#D9FBF7] px-4 py-2 text-sm font-semibold text-slate-700 transition active:scale-95;
+    line-height: 1;
   }
 
   .ui-pill-title {
     @apply flex flex-1 items-center justify-center rounded-full bg-[#18C6C8] px-4 py-3 text-center text-[17px] font-medium text-white shadow-sm;
     min-height: 44px;
+  }
+
+  .ui-card-motion {
+    animation: uiCardIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--ui-card-delay, 0ms);
+    will-change: transform, opacity;
+  }
+}
+
+@media (hover: hover) {
+  .ui-primary-btn:hover,
+  .ui-secondary-btn:hover,
+  .ui-back-circle:hover,
+  .ui-back-text-btn:hover {
+    transform: translateY(-1px);
+  }
+
+  .ui-primary-btn:hover {
+    box-shadow: 0 10px 24px rgba(24, 198, 200, 0.22);
+  }
+
+  .ui-secondary-btn:hover,
+  .ui-back-circle:hover,
+  .ui-back-text-btn:hover {
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
   }
 }
 
@@ -96,5 +147,13 @@
   *::before,
   *::after {
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .ui-card-motion {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
   }
 }

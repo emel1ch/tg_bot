@@ -33,12 +33,13 @@ export default function AdaptationDentist({ onNavigate, onBack }) {
       onBack={onBack}
     >
       <div className="flex flex-col gap-3">
-        {DENTIST_MATERIALS.map((item) => (
+        {DENTIST_MATERIALS.map((item, index) => (
           <button
             key={item.id}
             type="button"
             onClick={() => handleItemClick(item)}
-            className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition active:scale-[0.99]"
+            className="ui-card-motion rounded-2xl border border-slate-200 bg-white p-4 text-left transition active:scale-[0.99]"
+            style={{ '--ui-card-delay': `${index * 60}ms` }}
           >
             <div className="font-semibold text-slate-900">{item.title}</div>
             <div className="mt-1 text-sm text-slate-500">{item.description}</div>

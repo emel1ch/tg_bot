@@ -1,5 +1,6 @@
 // src/components/DentistPageShell.jsx
 import React from 'react'
+import BackArrowIcon from './BackArrowIcon'
 
 export default function DentistPageShell({
   title,
@@ -18,7 +19,7 @@ export default function DentistPageShell({
               aria-label="Назад"
               className="ui-back-circle"
             >
-              <span className="text-2xl leading-none">←</span>
+              <BackArrowIcon />
             </button>
 
             <div className="ui-pill-title">{title}</div>

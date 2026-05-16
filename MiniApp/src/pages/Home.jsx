@@ -134,6 +134,7 @@ export default function Home({
               footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: dentistUnlocked ? '0 24px' : '0 20px' }}
               footerRightWrapStyle={{ top: '0px', left: '0px' }}
               onClick={() => dentistUnlocked ? onNavigate('adaptation-dentist') : onOpenDentistPay?.()}
+              animationDelayMs={40}
             />
 
             <ScenarioCard
@@ -159,6 +160,7 @@ export default function Home({
               footerRightStyle={{ color: '#fff', borderRadius: '12px', padding: '0 24px' }}
               footerRightWrapStyle={{ top: '0px', left: '0px' }}
               onClick={() => onNavigate('adaptation')}
+              animationDelayMs={110}
             />
           </div>
         </div>
