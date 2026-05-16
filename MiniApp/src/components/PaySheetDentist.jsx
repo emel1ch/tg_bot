@@ -48,6 +48,7 @@ export default function PaySheetDentist({
     deltaY: 0,
   })
 
+  const wasVerticalSwipesEnabledRef = useRef(null)
   const closeTimerRef = useRef(null)
 
   useEffect(() => {
@@ -61,6 +62,26 @@ export default function PaySheetDentist({
 
     const frame = window.requestAnimationFrame(() => setIsVisible(true))
     return () => window.cancelAnimationFrame(frame)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return undefined
+
+    const telegramWebApp = window.Telegram?.WebApp
+    if (typeof telegramWebApp?.disableVerticalSwipes !== 'function') return undefined
+
+    wasVerticalSwipesEnabledRef.current = telegramWebApp.isVerticalSwipesEnabled
+    telegramWebApp.disableVerticalSwipes()
+
+    return () => {
+      if (
+        wasVerticalSwipesEnabledRef.current !== false &&
+        typeof telegramWebApp.enableVerticalSwipes === 'function'
+      ) {
+        telegramWebApp.enableVerticalSwipes()
+      }
+      wasVerticalSwipesEnabledRef.current = null
+    }
   }, [isOpen])
 
   const resetLocalState = () => {
