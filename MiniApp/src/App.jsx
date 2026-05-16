@@ -71,11 +71,22 @@ const resolveTelegramInitData = () => {
 
 const openPaymentPage = (url) => {
   const telegramWebApp = window?.Telegram?.WebApp
+  const isIosWebView =
+    telegramWebApp?.platform === 'ios' ||
+    /iP(ad|hone|od)/.test(window.navigator?.userAgent || '')
+
+  if (isIosWebView) {
+    window.location.assign(url)
+    return
+  }
+
   if (telegramWebApp?.openLink) {
     telegramWebApp.openLink(url)
     return
   }
-  window.open(url, '_blank', 'noopener,noreferrer')
+
+  const paymentWindow = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!paymentWindow) window.location.assign(url)
 }
 
 const waitForPaymentResult = async ({ paymentId, userId, productId }) => {
