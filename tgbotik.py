@@ -1,21 +1,17 @@
 import re
-import os
 import asyncio
 import calendar
 from datetime import datetime, timezone, timedelta
 from database import async_session
 from database import Doctor
-from database import deactivate_doctor
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command, StateFilter, BaseFilter
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
+from aiogram.filters import CommandStart, Command, BaseFilter
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID, ADMIN_TELEGRAM_IDS
-from aiogram.filters import CommandObject
+from config import TOKEN, GROUP_ID, WORKER_URL, SUPERADMIN_ID
 from database import date_has_slots
 from database import get_all_users, grant_admin_rights
 from database import (
@@ -36,19 +32,22 @@ from database import (
     deactivate_doctor,
     set_weekly_schedule,
     add_doctor_exception,
+    get_weekly_schedule,
+    get_doctor_exceptions,
+    delete_weekly_rule,
+    delete_doctor_exception,
 )
 from database import (
     create_city, get_cities, delete_city,
     create_clinic, get_clinics_by_city, delete_clinic
 )
 
-# 2. Создаем кастомный сервер API
-custom_server = TelegramAPIServer.from_base(WORKER_URL)
 
-# 3. Подключаем этот сервер к aiohttp сессии
-session = AiohttpSession(api=custom_server)
 
-# 4. Инициализируем бота с этой сессией
+# 1. Подключаем этот сервер к aiohttp сессии
+session = AiohttpSession(proxy=WORKER_URL)
+
+# 2. Инициализируем бота с этой сессией
 bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
 
@@ -163,7 +162,7 @@ async def ignore_calendar_clicks(callback: CallbackQuery):
     await callback.answer()
 
 
-async def calendar_kb(year, month, doctor_id=None):
+async def calendar_kb(year, month, doctor_id=None, mode="booking"):
     now = datetime.now(MSK_TZ)
 
     max_month = now.month + 2
@@ -201,6 +200,20 @@ async def calendar_kb(year, month, doctor_id=None):
                 row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
                 continue
 
+            # Режим для админа: выбор даты исключения
+            if mode == "admin_exception":
+                # В режиме исключений можно нажимать любой будущий день,
+                # даже если он сейчас закрыт крестиком
+                if doctor_id is not None:
+                    available = await date_has_slots(doctor_id, year, month, day)
+                    label = str(day) if available else f"❌ {day}"
+                else:
+                    label = str(day)
+
+                row.append(InlineKeyboardButton(text=label, callback_data=f"day_{year}_{month}_{day}"))
+                continue
+
+            # Обычный режим записи к врачу
             if doctor_id is None:
                 row.append(InlineKeyboardButton(text="❌", callback_data="ignore"))
                 continue
@@ -282,7 +295,7 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сервис 'Иду к врачу'",
                               url="https://youtu.be/dQw4w9WgXcQ?si=Kgr7WKcdwiUi5e1k")],
-        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://b4424c18345afb.lhr.life"))],
+        [InlineKeyboardButton(text="📚 Подготовка (Материалы)", web_app=WebAppInfo(url="https://idykvrachy.pro/"))],
         [InlineKeyboardButton(text="📅 Запись к врачу", callback_data="menu_book_appointment")],
         [InlineKeyboardButton(text="📋 Мои записи", callback_data="menu_my_records")],
         [InlineKeyboardButton(text="💬 Написать нам", callback_data="menu_support")]
@@ -488,9 +501,14 @@ async def choose_clinic(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BookingState.choosing_doctor)
 
     if not doctors:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clinic")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
+        ])
+
         await callback.message.edit_text(
             "В этой клинике нет врачей",
-            reply_markup=get_back_to_main_kb()
+            reply_markup=kb
         )
         return
 
@@ -608,7 +626,6 @@ async def next_month(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     _, year, month = callback.data.split("_")
-
     year = int(year)
     month = int(month) + 1
 
@@ -618,9 +635,10 @@ async def next_month(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     doctor_id = data.get("doctor_id")
+    mode = data.get("calendar_mode", "booking")
 
     await callback.message.edit_reply_markup(
-        reply_markup=await calendar_kb(year, month, doctor_id)
+        reply_markup=await calendar_kb(year, month, doctor_id, mode=mode)
     )
 
 
@@ -629,7 +647,6 @@ async def prev_month(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     _, year, month = callback.data.split("_")
-
     year = int(year)
     month = int(month) - 1
 
@@ -639,9 +656,10 @@ async def prev_month(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     doctor_id = data.get("doctor_id")
+    mode = data.get("calendar_mode", "booking")
 
     await callback.message.edit_reply_markup(
-        reply_markup=await calendar_kb(year, month, doctor_id)
+        reply_markup=await calendar_kb(year, month, doctor_id, mode=mode)
     )
 
 
@@ -714,6 +732,10 @@ async def back_to_city(callback: CallbackQuery, state: FSMContext):
     ]
 
     await state.set_state(BookingState.choosing_city)
+
+    kb.append([
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")
+    ])
 
     await callback.message.edit_text(
         "📍 Выберите город:",
@@ -840,7 +862,9 @@ async def process_my_records(callback: CallbackQuery):
     if not appointments:
         await callback.message.edit_text(
             "📋 Ваши записи:\n\nУ вас пока нет активных записей.",
-            reply_markup=get_back_to_main_kb()
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="return_main")]
+            ])
         )
         return
 
@@ -857,7 +881,9 @@ async def process_my_records(callback: CallbackQuery):
 
     await callback.message.edit_text(
         text,
-        reply_markup=get_back_to_main_kb()
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="return_main")]
+        ])
     )
 
 
@@ -891,13 +917,17 @@ async def forward_to_support(message: Message, state: FSMContext):
         # Уведомляем пользователя, что всё ок
         await message.answer(
             "✅ Ваше сообщение успешно отправлено! Специалисты скоро с вами свяжутся.",
-            reply_markup=get_main_menu_kb()
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
+            ])
         )
     except Exception as e:
         # Если бот не добавлен в группу или нет прав
         await message.answer(
             "❌ Произошла ошибка при отправке сообщения. Пожалуйста, попробуйте позже.",
-            reply_markup=get_main_menu_kb()
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
+            ])
         )
         print(f"Ошибка отправки в группу: {e}")
 
@@ -980,8 +1010,8 @@ class AdminState(StatesGroup):
 
 class IsAdmin(BaseFilter):
     async def __call__(self, message: Message) -> bool:
-        # 1. Админы из конфига (включая SUPERADMIN_ID) пускаются всегда
-        if message.from_user.id in ADMIN_TELEGRAM_IDS:
+        # 1. Суперадмин из конфига пускается всегда
+        if message.from_user.id == SUPERADMIN_ID:
             return True
 
         # 2. Остальные проверяются по базе данных
@@ -1226,17 +1256,135 @@ async def add_new_doctor(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("edit_doc_"))
 async def edit_doctor(callback: CallbackQuery, state: FSMContext):
     doctor_id = int(callback.data.split("_")[2])
-
     await state.update_data(doctor_id=doctor_id)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить ФИО", callback_data="edit_name")],
         [InlineKeyboardButton(text="🩺 Изменить специальность", callback_data="edit_spec")],
-        [InlineKeyboardButton(text="📅 Расписание", callback_data="add_schedule")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+        [InlineKeyboardButton(text="📅 Расписание и исключения", callback_data="doctor_schedule_menu")],
+        [InlineKeyboardButton(text="🔙 К списку врачей", callback_data="back_to_doctor_list")]
     ])
 
     await callback.message.edit_text("Редактирование врача:", reply_markup=kb)
+
+
+@dp.callback_query(F.data == "doctor_schedule_menu")
+async def doctor_schedule_menu(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
+    if not doctor_id:
+        await callback.answer("Врач не найден", show_alert=True)
+        return
+
+    weekly = await get_weekly_schedule(doctor_id)
+    exceptions = await get_doctor_exceptions(doctor_id)
+
+    text = "📅 Расписание врача:\n\n"
+
+    if weekly:
+        text += "Обычные дни:\n"
+        for rule in weekly:
+            text += f"• {WEEKDAY_NAMES[rule.weekday]} {rule.start_time.strftime('%H:%M')}–{rule.end_time.strftime('%H:%M')}\n"
+    else:
+        text += "Обычных рабочих дней пока нет.\n"
+
+    text += "\nИсключения (перекрывают обычное расписание):\n"
+    if exceptions:
+        for exc in exceptions:
+            if exc.is_working and exc.start_time and exc.end_time:
+                desc = f"рабочий день {exc.start_time.strftime('%H:%M')}–{exc.end_time.strftime('%H:%M')}"
+            else:
+                desc = "выходной"
+            text += f"• {exc.exception_date.strftime('%d.%m.%Y')} — {desc}\n"
+    else:
+        text += "Нет исключений.\n"
+
+    kb = []
+    for rule in weekly:
+        kb.append([
+            InlineKeyboardButton(
+                text=f"❌ Убрать {WEEKDAY_NAMES[rule.weekday]} {rule.start_time.strftime('%H:%M')}–{rule.end_time.strftime('%H:%M')}",
+                callback_data=f"del_rule_{rule.id}"
+            )
+        ])
+
+    for exc in exceptions:
+        kb.append([
+            InlineKeyboardButton(
+                text=f"❌ Убрать исключение {exc.exception_date.strftime('%d.%m.%Y')}",
+                callback_data=f"del_exc_{exc.id}"
+            )
+        ])
+
+    kb.append([InlineKeyboardButton(text="➕ Добавить рабочий день", callback_data="add_schedule")])
+    kb.append([InlineKeyboardButton(text="🚫 Добавить исключение", callback_data="add_exception")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_doctor_menu")])
+
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+@dp.callback_query(F.data == "back_to_doctor_menu")
+async def back_to_doctor_menu(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    doctor_id = data.get("doctor_id")
+
+    if not doctor_id:
+        await callback.answer("Врач не найден", show_alert=True)
+        return
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить ФИО", callback_data="edit_name")],
+        [InlineKeyboardButton(text="🩺 Изменить специальность", callback_data="edit_spec")],
+        [InlineKeyboardButton(text="📅 Расписание и исключения", callback_data="doctor_schedule_menu")],
+        [InlineKeyboardButton(text="🔙 К списку врачей", callback_data="back_to_doctor_list")]
+    ])
+
+    await callback.message.edit_text("Редактирование врача:", reply_markup=kb)
+
+
+@dp.callback_query(F.data.startswith("del_rule_"))
+async def delete_rule(callback: CallbackQuery, state: FSMContext):
+    rule_id = int(callback.data.split("_")[2])
+    await delete_weekly_rule(rule_id)
+    await callback.answer("Удалено")
+    await doctor_schedule_menu(callback, state)
+
+
+@dp.callback_query(F.data.startswith("del_exc_"))
+async def delete_exc(callback: CallbackQuery, state: FSMContext):
+    exc_id = int(callback.data.split("_")[2])
+    await delete_doctor_exception(exc_id)
+    await callback.answer("Удалено")
+    await doctor_schedule_menu(callback, state)
+
+
+@dp.callback_query(F.data == "back_to_doctor_list")
+async def back_to_doctor_list(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    clinic_id = data.get("clinic_id")
+
+    if not clinic_id:
+        await callback.answer("Клиника не найдена", show_alert=True)
+        return
+
+    doctors = await get_doctors_by_clinic(clinic_id)
+
+    kb = []
+    for d in doctors:
+        kb.append([
+            InlineKeyboardButton(text=f"✏️ {d.full_name}", callback_data=f"edit_doc_{d.doctor_id}"),
+            InlineKeyboardButton(text="❌", callback_data=f"del_doc_{d.doctor_id}")
+        ])
+
+    kb.append([InlineKeyboardButton(text="➕ Добавить врача", callback_data="add_new_doctor")])
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")])
+
+    await callback.message.edit_text(
+        "👨‍⚕️ Врачи:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
+    )
+
 
 @dp.callback_query(F.data == "edit_name")
 async def edit_name(callback: CallbackQuery, state: FSMContext):
@@ -1244,7 +1392,7 @@ async def edit_name(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         "Введите новое ФИО:",
-        reply_markup=back_main_admin_kb()
+        reply_markup=back_main_admin_kb("back_to_doctor_menu")
     )
 
 
@@ -1267,7 +1415,7 @@ async def edit_spec(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         "Введите новую специальность:",
-        reply_markup=back_main_admin_kb()
+        reply_markup=back_main_admin_kb("back_to_doctor_menu")
     )
 
 @dp.message(AdminState.editing_spec)
@@ -1290,12 +1438,12 @@ async def input_doctor_name(message: Message, state: FSMContext):
 
     await message.answer(
         "Введите специальность врача:",
-        reply_markup=back_main_admin_kb()
+        reply_markup=back_main_admin_kb("back_to_doctor_list")
     )
 
-def back_main_admin_kb():
+def back_main_admin_kb(back_callback="admin_back"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="return_main")]
     ])
 
@@ -1485,17 +1633,26 @@ async def save_schedule(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🏠 В админку", callback_data="admin_back")]
     ])
 
-    await callback.message.edit_text("✅ Расписание сохранено", reply_markup=kb)
+    await callback.message.edit_text(
+        "✅ Расписание сохранено",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить ещё день", callback_data="add_schedule")],
+            [InlineKeyboardButton(text="🚫 Добавить исключение", callback_data="add_exception")],
+            [InlineKeyboardButton(text="📅 К расписанию", callback_data="doctor_schedule_menu")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_doctor_menu")]
+        ])
+    )
 
 @dp.callback_query(F.data == "add_exception")
 async def start_exception(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.choosing_exception_date)
+    await state.update_data(calendar_mode="admin_exception")
 
     now = datetime.now(MSK_TZ)
 
     await callback.message.edit_text(
         "📅 Выбери дату исключения:",
-        reply_markup=await calendar_kb(now.year, now.month)
+        reply_markup=await calendar_kb(now.year, now.month, mode="admin_exception")
     )
 
 @dp.callback_query(AdminState.choosing_exception_date, F.data.startswith("day_"))
@@ -1508,6 +1665,7 @@ async def choose_exception_date(callback: CallbackQuery, state: FSMContext):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Выходной (не работает)", callback_data="exc_off")],
+        [InlineKeyboardButton(text="🟢 Сделать рабочим", callback_data="exc_work")],
         [InlineKeyboardButton(text="⏰ Особые часы", callback_data="exc_custom")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
     ])
@@ -1533,6 +1691,21 @@ async def exception_off(callback: CallbackQuery, state: FSMContext):
         "✅ День успешно заблокирован",
         reply_markup=back_main_admin_kb()
     )
+
+
+@dp.callback_query(AdminState.choosing_exception_type, F.data == "exc_work")
+async def exception_work(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    await state.set_state(AdminState.choosing_exception_start)
+
+    kb = build_hour_keyboard(range(7, 14), "exc_start_", "admin_back")
+
+    await callback.message.edit_text(
+        "Выбери время начала рабочего дня:",
+        reply_markup=kb
+    )
+
 
 @dp.callback_query(AdminState.choosing_exception_type, F.data == "exc_custom")
 async def exception_custom_start(callback: CallbackQuery, state: FSMContext):

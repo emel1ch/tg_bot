@@ -290,6 +290,43 @@ async def add_doctor_exception(doctor_id: int, exc_date: dt_date, is_working=Fal
         await session.commit()
 
 
+async def get_weekly_schedule(doctor_id: int):
+    async with async_session() as session:
+        stmt = (
+            select(DoctorWeeklySchedule)
+            .where(DoctorWeeklySchedule.doctor_id == doctor_id)
+            .order_by(DoctorWeeklySchedule.weekday, DoctorWeeklySchedule.start_time)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+
+async def get_doctor_exceptions(doctor_id: int):
+    async with async_session() as session:
+        stmt = (
+            select(DoctorException)
+            .where(DoctorException.doctor_id == doctor_id)
+            .order_by(DoctorException.exception_date)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+
+async def delete_weekly_rule(rule_id: int):
+    async with async_session() as session:
+        rule = await session.get(DoctorWeeklySchedule, rule_id)
+        if rule:
+            await session.delete(rule)
+            await session.commit()
+
+
+async def delete_doctor_exception(exception_id: int):
+    async with async_session() as session:
+        exc = await session.get(DoctorException, exception_id)
+        if exc:
+            await session.delete(exc)
+            await session.commit()
+
 # =========================
 #   AVAILABLE TIME SLOTS
 # =========================
