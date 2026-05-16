@@ -142,18 +142,4 @@
   html:focus-within {
     scroll-behavior: auto;
   }
-
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
-
-  .ui-card-motion {
-    opacity: 1;
-    transform: none;
-    animation: none !important;
-  }
 }

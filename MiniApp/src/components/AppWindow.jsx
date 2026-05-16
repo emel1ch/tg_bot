@@ -1,5 +1,5 @@
 import React from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { motion } from 'framer-motion'
 
 const MotionDiv = motion.div
 
@@ -22,12 +22,6 @@ const windowVariants = {
 }
 
 export default function AppWindow({ children }) {
-  const reduceMotion = useReducedMotion()
-
-  if (reduceMotion) {
-    return <div className="min-h-screen w-full bg-white">{children}</div>
-  }
-
   return (
     <MotionDiv
       className="min-h-screen w-full bg-white"
