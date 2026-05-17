@@ -24,6 +24,8 @@ const API_BASE_URL = (
 const PAYMENT_POLL_INTERVAL_MS = 2500
 const PAYMENT_POLL_TIMEOUT_MS = 180000
 const LOCAL_USER_STORAGE_KEY = 'miniapp-user-id-v1'
+const PENDING_PAYMENT_STORAGE_KEY = 'miniapp-pending-payment-v1'
+const PENDING_PAYMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 let runtimeUserId = ''
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -52,6 +54,63 @@ const writeLocalUserId = (userId) => {
     window.localStorage.setItem(LOCAL_USER_STORAGE_KEY, userId)
   } catch {
     // Telegram WebView or private browsing can block storage; keep runtime id for this session.
+  }
+}
+
+const readPendingPayment = () => {
+  try {
+    const rawValue = window.localStorage.getItem(PENDING_PAYMENT_STORAGE_KEY)
+    if (!rawValue) return null
+
+    const parsed = JSON.parse(rawValue)
+    const paymentId = String(parsed?.paymentId || '').trim()
+    const userId = String(parsed?.userId || '').trim()
+    const productId = String(parsed?.productId || '').trim()
+    const createdAt = Number(parsed?.createdAt || 0)
+
+    if (!paymentId || !userId || !productId || !Number.isFinite(createdAt)) {
+      window.localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY)
+      return null
+    }
+    if (Date.now() - createdAt > PENDING_PAYMENT_MAX_AGE_MS) {
+      window.localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY)
+      return null
+    }
+
+    return { paymentId, userId, productId, createdAt }
+  } catch {
+    try {
+      window.localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY)
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+    return null
+  }
+}
+
+const writePendingPayment = ({ paymentId, userId, productId }) => {
+  try {
+    window.localStorage.setItem(
+      PENDING_PAYMENT_STORAGE_KEY,
+      JSON.stringify({
+        paymentId,
+        userId,
+        productId,
+        createdAt: Date.now(),
+      })
+    )
+  } catch {
+    // Payment polling still runs in this session if storage is unavailable.
+  }
+}
+
+const clearPendingPayment = (paymentId = null) => {
+  try {
+    const pendingPayment = readPendingPayment()
+    if (paymentId && pendingPayment?.paymentId !== paymentId) return
+    window.localStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY)
+  } catch {
+    // No recovery is needed if storage cleanup is unavailable.
   }
 }
 
@@ -146,6 +205,7 @@ export default function App() {
   const [toastPhase, setToastPhase] = useState('hidden')
   const toastHideTimerRef = useRef(null)
   const toastUnmountTimerRef = useRef(null)
+  const pendingPaymentCheckRef = useRef(false)
   const telegramInitDataRaw = useMemo(() => resolveTelegramInitData(), [])
 
   const clearToastTimers = useCallback(() => {
@@ -172,6 +232,51 @@ export default function App() {
   }, [showSuccessToast])
 
   useEffect(() => clearToastTimers, [clearToastTimers])
+
+  const restorePendingPayment = useCallback(async () => {
+    if (!API_BASE_URL || pendingPaymentCheckRef.current) return
+
+    const pendingPayment = readPendingPayment()
+    if (!pendingPayment) return
+
+    pendingPaymentCheckRef.current = true
+    try {
+      const paymentResult = await waitForPaymentResult(pendingPayment)
+      if (paymentResult.ok) {
+        clearPendingPayment(pendingPayment.paymentId)
+        if (
+          pendingPayment.userId === currentUserId &&
+          pendingPayment.productId === DENTIST_PRODUCT_ID
+        ) {
+          unlockDentist()
+        }
+        return
+      }
+
+      if (paymentResult.message === 'Оплата отменена или не прошла') {
+        clearPendingPayment(pendingPayment.paymentId)
+      }
+    } finally {
+      pendingPaymentCheckRef.current = false
+    }
+  }, [currentUserId, unlockDentist])
+
+  useEffect(() => {
+    restorePendingPayment()
+
+    const handleFocus = () => restorePendingPayment()
+    const handleVisibilityChange = () => {
+      if (!document.hidden) restorePendingPayment()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [restorePendingPayment])
 
   useEffect(() => {
     if (!API_BASE_URL || !currentUserId) return
@@ -333,6 +438,11 @@ export default function App() {
         return { ok: false, message: data.message || 'Не удалось создать платеж' }
       }
 
+      writePendingPayment({
+        paymentId: data.paymentId,
+        userId: currentUserId,
+        productId: DENTIST_PRODUCT_ID,
+      })
       openPaymentPage(data.confirmationUrl)
       const paymentResult = await waitForPaymentResult({
         paymentId: data.paymentId,
@@ -340,7 +450,12 @@ export default function App() {
         productId: DENTIST_PRODUCT_ID,
       })
 
-      if (paymentResult.ok) setActivePromo(null)
+      if (paymentResult.ok) {
+        clearPendingPayment(data.paymentId)
+        setActivePromo(null)
+      } else if (paymentResult.message === 'Оплата отменена или не прошла') {
+        clearPendingPayment(data.paymentId)
+      }
       return paymentResult
     } catch {
       return { ok: false, message: 'Ошибка соединения с сервером оплаты' }

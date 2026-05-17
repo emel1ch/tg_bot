@@ -66,6 +66,7 @@ const DEFAULT_PROMO_ENTRIES = Array.from(
 
 const { Pool } = pg;
 let botDbPool = null;
+const paymentFulfillmentLocks = new Map();
 
 const hasSupportedBotDatabase = () => /^postgres(ql)?:\/\//i.test(BOT_DATABASE_URL);
 
@@ -542,6 +543,108 @@ const paymentMatchesDentistProduct = (payment, userId) => {
   );
 };
 
+const getPaymentFulfillmentContext = (payment, expectedUserId = null) => {
+  const metadata = payment?.metadata || {};
+  const amount = payment?.amount || {};
+  const userId = normalizeUserId(metadata.user_id);
+  const productId = normalizeProductId(metadata.product_id);
+  const paymentStatus = String(payment?.status || '');
+  const isAllowedFinalStatus = paymentStatus === 'succeeded' || paymentStatus === 'waiting_for_capture';
+  const userMatches = !expectedUserId || userId === expectedUserId;
+  const isProductValid = Boolean(
+    userId &&
+    productId &&
+    userMatches &&
+    paymentMatchesDentistProduct(payment, userId)
+  );
+
+  return {
+    userId,
+    productId,
+    paymentStatus,
+    isAllowedFinalStatus,
+    isProductValid,
+    paymentPromoCode: normalizePromoCode(metadata.promo_code),
+    discountPercent: metadata.discount_percent,
+    amountValue: amount.value,
+    expectedAmount: String(metadata.expected_amount_value || DENTIST_BASE_PRICE.toFixed(2)),
+    actualAmount: amount.value,
+    expectedCurrency: DENTIST_CURRENCY,
+    actualCurrency: amount.currency,
+  };
+};
+
+const fulfillDentistPaymentUnlocked = async (payment, { expectedUserId = null } = {}) => {
+  const context = getPaymentFulfillmentContext(payment, expectedUserId);
+  let unlocked = false;
+
+  if (context.userId && context.productId) {
+    unlocked = await hasEntitlement({
+      userId: context.userId,
+      productId: context.productId,
+    });
+  }
+
+  if (!unlocked && context.isAllowedFinalStatus && context.isProductValid) {
+    await grantEntitlement({
+      userId: context.userId,
+      productId: context.productId,
+      paymentId: payment.id,
+      source: context.paymentPromoCode ? `payment:${context.paymentPromoCode}` : 'payment',
+    });
+
+    if (context.paymentPromoCode) {
+      await incrementPromoUsageCount(context.paymentPromoCode);
+      await appendPromoUsageHistory({
+        code: context.paymentPromoCode,
+        userId: context.userId,
+        productId: context.productId,
+        discountPercent: context.discountPercent,
+        accessGranted: true,
+        finalAmountValue: context.amountValue,
+        paymentId: payment.id,
+        eventType: 'payment_confirmed',
+      });
+    }
+
+    unlocked = true;
+  }
+
+  return {
+    paymentId: payment?.id,
+    status: context.paymentStatus,
+    paid: Boolean(payment?.paid),
+    unlocked,
+    validation: {
+      isProductValid: context.isProductValid,
+      expectedAmount: context.expectedAmount,
+      actualAmount: context.actualAmount,
+      expectedCurrency: context.expectedCurrency,
+      actualCurrency: context.actualCurrency,
+    },
+  };
+};
+
+const fulfillDentistPayment = async (payment, options) => {
+  const paymentId = String(payment?.id || '').trim();
+  if (!paymentId) return fulfillDentistPaymentUnlocked(payment, options);
+
+  const previousLock = paymentFulfillmentLocks.get(paymentId) || Promise.resolve();
+  const currentLock = previousLock
+    .catch(() => {})
+    .then(() => fulfillDentistPaymentUnlocked(payment, options));
+
+  paymentFulfillmentLocks.set(paymentId, currentLock);
+
+  try {
+    return await currentLock;
+  } finally {
+    if (paymentFulfillmentLocks.get(paymentId) === currentLock) {
+      paymentFulfillmentLocks.delete(paymentId);
+    }
+  }
+};
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
@@ -854,49 +957,16 @@ app.get('/api/payments/:paymentId', async (req, res) => {
       });
     }
 
-    const paymentStatus = responseBody.status;
-    const isAllowedFinalStatus = paymentStatus === 'succeeded' || paymentStatus === 'waiting_for_capture';
-    const isProductValid = paymentMatchesDentistProduct(responseBody, userId);
-
-    let unlocked = await hasEntitlement({ userId, productId });
-
-    if (!unlocked && isAllowedFinalStatus && isProductValid) {
-      const paymentPromoCode = normalizePromoCode(responseBody?.metadata?.promo_code);
-      await grantEntitlement({
-        userId,
-        productId,
-        paymentId: responseBody.id,
-        source: paymentPromoCode ? `payment:${paymentPromoCode}` : 'payment',
-      });
-      if (paymentPromoCode) {
-        await incrementPromoUsageCount(paymentPromoCode);
-        await appendPromoUsageHistory({
-          code: paymentPromoCode,
-          userId,
-          productId,
-          discountPercent: responseBody?.metadata?.discount_percent,
-          accessGranted: true,
-          finalAmountValue: responseBody?.amount?.value,
-          paymentId: responseBody.id,
-          eventType: 'payment_confirmed',
-        });
-      }
-      unlocked = true;
-    }
+    const fulfillment = await fulfillDentistPayment(responseBody, { expectedUserId: userId });
+    const unlocked = await hasEntitlement({ userId, productId });
 
     return res.json({
       ok: true,
-      paymentId: responseBody.id,
-      status: paymentStatus,
-      paid: responseBody.paid,
+      paymentId: fulfillment.paymentId,
+      status: fulfillment.status,
+      paid: fulfillment.paid,
       unlocked,
-      validation: {
-        isProductValid,
-        expectedAmount: String(responseBody?.metadata?.expected_amount_value || DENTIST_BASE_PRICE.toFixed(2)),
-        actualAmount: responseBody?.amount?.value,
-        expectedCurrency: DENTIST_CURRENCY,
-        actualCurrency: responseBody?.amount?.currency,
-      },
+      validation: fulfillment.validation,
     });
   } catch (error) {
     return res.status(502).json({
