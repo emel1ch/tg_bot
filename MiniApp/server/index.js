@@ -29,6 +29,8 @@ const DENTIST_PAYMENT_DESCRIPTION = process.env.DEFAULT_PAYMENT_DESCRIPTION || '
 
 const ENTITLEMENTS_FILE_PATH = path.join(__dirname, 'data', 'entitlements.json');
 const PROMO_SETTINGS_FILE_PATH = path.join(__dirname, 'data', 'promo-settings.json');
+const PROMO_USAGE_HISTORY_FILE_PATH = path.join(__dirname, 'data', 'promo-usage-history.json');
+const PROMO_USAGE_HISTORY_LIMIT = 500;
 
 const TELEGRAM_INIT_DATA_MAX_AGE_SEC = Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SEC || 86400);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -52,7 +54,15 @@ const DEFAULT_PROMO_ENTRIES = Array.from(
       .map((code) => String(code || '').trim().toUpperCase())
       .filter((code) => /^[A-Z0-9_-]{3,64}$/.test(code))
   )
-).map((code) => ({ code, discountPercent: 100 }));
+).map((code) => ({
+  code,
+  discountPercent: 100,
+  expiresAt: null,
+  maxUses: null,
+  usedCount: 0,
+  note: '',
+  active: true,
+}));
 
 const { Pool } = pg;
 let botDbPool = null;
@@ -87,6 +97,39 @@ const normalizePromoCode = (value) => {
   return code;
 };
 
+const normalizePromoNote = (value) => {
+  const note = String(value || '').trim();
+  return note ? note.slice(0, 240) : '';
+};
+
+const normalizePromoMaxUses = (value) => {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  if (rounded < 1) return null;
+  return rounded;
+};
+
+const normalizePromoUsedCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.round(parsed));
+};
+
+const normalizePromoExpiresAt = (value) => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return null;
+
+  const normalizedDateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawValue);
+  const parsed = normalizedDateOnly
+    ? new Date(`${rawValue}T23:59:59.999Z`)
+    : new Date(rawValue);
+
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+};
+
 const normalizeDiscountPercent = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -99,7 +142,15 @@ const normalizePromoEntry = (entry) => {
   if (typeof entry === 'string') {
     const code = normalizePromoCode(entry);
     if (!code) return null;
-    return { code, discountPercent: 100 };
+    return {
+      code,
+      discountPercent: 100,
+      expiresAt: null,
+      maxUses: null,
+      usedCount: 0,
+      note: '',
+      active: true,
+    };
   }
 
   if (!entry || typeof entry !== 'object') return null;
@@ -108,7 +159,15 @@ const normalizePromoEntry = (entry) => {
     entry.discountPercent ?? entry.discount ?? entry.percent
   );
   if (!code || discountPercent == null) return null;
-  return { code, discountPercent };
+  return {
+    code,
+    discountPercent,
+    expiresAt: normalizePromoExpiresAt(entry.expiresAt),
+    maxUses: normalizePromoMaxUses(entry.maxUses),
+    usedCount: normalizePromoUsedCount(entry.usedCount),
+    note: normalizePromoNote(entry.note),
+    active: entry.active !== false,
+  };
 };
 
 const normalizePromoEntries = (entries) => {
@@ -124,6 +183,50 @@ const normalizePromoEntries = (entries) => {
     unique.push(entry);
   }
   return unique;
+};
+
+const normalizePromoEntriesForSave = (entries, previousEntries = []) => {
+  const previousByCode = new Map(previousEntries.map((entry) => [entry.code, entry]));
+  const normalized = [];
+  const seen = new Set();
+
+  for (const rawEntry of entries || []) {
+    const entry = normalizePromoEntry(rawEntry);
+    if (!entry || seen.has(entry.code)) continue;
+
+    const rawHasUsedCount = Boolean(
+      rawEntry &&
+      typeof rawEntry === 'object' &&
+      Object.prototype.hasOwnProperty.call(rawEntry, 'usedCount')
+    );
+    const previousEntry = previousByCode.get(entry.code);
+
+    normalized.push({
+      ...entry,
+      usedCount: rawHasUsedCount ? entry.usedCount : previousEntry?.usedCount ?? 0,
+    });
+    seen.add(entry.code);
+  }
+
+  return normalized;
+};
+
+const getPromoAvailability = (entry, now = new Date()) => {
+  if (!entry) return { ok: false, message: 'Промокод недействителен' };
+  if (entry.active === false) return { ok: false, message: 'Промокод выключен' };
+
+  if (entry.expiresAt) {
+    const expiresAt = new Date(entry.expiresAt);
+    if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < now.getTime()) {
+      return { ok: false, message: 'Срок действия промокода истёк' };
+    }
+  }
+
+  if (entry.maxUses != null && entry.usedCount >= entry.maxUses) {
+    return { ok: false, message: 'Лимит использований промокода исчерпан' };
+  }
+
+  return { ok: true };
 };
 
 const priceToCents = (value) => Math.round(Number(value) * 100);
@@ -264,11 +367,16 @@ const readPromoSettings = async () => {
   const parsed = await readJsonObject(PROMO_SETTINGS_FILE_PATH, null);
   if (!parsed) return null;
 
+  const meta = {
+    changedAt: typeof parsed.changedAt === 'string' ? parsed.changedAt : null,
+    changedBy: typeof parsed.changedBy === 'string' ? parsed.changedBy : null,
+  };
+
   if (Array.isArray(parsed.entries)) {
-    return { entries: normalizePromoEntries(parsed.entries) };
+    return { ...meta, entries: normalizePromoEntries(parsed.entries) };
   }
   if (Array.isArray(parsed.codes)) {
-    return { entries: normalizePromoEntries(parsed.codes) };
+    return { ...meta, entries: normalizePromoEntries(parsed.codes) };
   }
   return null;
 };
@@ -286,23 +394,108 @@ const findPromoEntryByCode = async (promoCode) => {
   return entries.find((entry) => entry.code === normalizedCode) || null;
 };
 
-const writePromoEntries = async (entries, changedByUserId) => {
-  const normalizedEntries = normalizePromoEntries(entries);
+const writePromoSettings = async ({ entries, changedAt = null, changedBy = null }) => {
   await fs.mkdir(path.dirname(PROMO_SETTINGS_FILE_PATH), { recursive: true });
   await fs.writeFile(
     PROMO_SETTINGS_FILE_PATH,
     JSON.stringify(
       {
-        entries: normalizedEntries,
-        changedAt: new Date().toISOString(),
-        changedBy: changedByUserId || null,
+        entries: normalizePromoEntries(entries),
+        changedAt,
+        changedBy,
       },
       null,
       2
     ),
     'utf8'
   );
+};
+
+const writePromoEntries = async (entries, changedByUserId) => {
+  const currentSettings = await readPromoSettings();
+  const normalizedEntries = normalizePromoEntriesForSave(entries, currentSettings?.entries || []);
+  await writePromoSettings({
+    entries: normalizedEntries,
+    changedAt: new Date().toISOString(),
+    changedBy: changedByUserId || null,
+  });
   return normalizedEntries;
+};
+
+const incrementPromoUsageCount = async (promoCode) => {
+  const normalizedCode = normalizePromoCode(promoCode);
+  if (!normalizedCode) return null;
+
+  const settings = await readPromoSettings();
+  const entries = settings?.entries || DEFAULT_PROMO_ENTRIES;
+  let updatedEntry = null;
+
+  const nextEntries = entries.map((entry) => {
+    if (entry.code !== normalizedCode) return entry;
+
+    updatedEntry = {
+      ...entry,
+      usedCount: normalizePromoUsedCount(entry.usedCount) + 1,
+    };
+    return updatedEntry;
+  });
+
+  if (!updatedEntry) return null;
+
+  await writePromoSettings({
+    entries: nextEntries,
+    changedAt: settings?.changedAt || null,
+    changedBy: settings?.changedBy || null,
+  });
+
+  return updatedEntry;
+};
+
+const readPromoUsageHistory = async () => {
+  const parsed = await readJsonObject(PROMO_USAGE_HISTORY_FILE_PATH, { entries: [] });
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed.entries)) return parsed.entries;
+  return [];
+};
+
+const writePromoUsageHistory = async (entries) => {
+  await fs.mkdir(path.dirname(PROMO_USAGE_HISTORY_FILE_PATH), { recursive: true });
+  await fs.writeFile(
+    PROMO_USAGE_HISTORY_FILE_PATH,
+    JSON.stringify({ entries: entries.slice(0, PROMO_USAGE_HISTORY_LIMIT) }, null, 2),
+    'utf8'
+  );
+};
+
+const appendPromoUsageHistory = async ({
+  code,
+  userId,
+  productId,
+  discountPercent,
+  accessGranted,
+  finalAmountValue,
+  paymentId = null,
+  eventType,
+}) => {
+  const normalizedCode = normalizePromoCode(code);
+  if (!normalizedCode) return null;
+
+  const entry = {
+    id: crypto.randomUUID(),
+    appliedAt: new Date().toISOString(),
+    code: normalizedCode,
+    userId: normalizeUserId(userId),
+    productId: normalizeProductId(productId),
+    discountPercent: normalizeDiscountPercent(discountPercent) ?? 0,
+    accessGranted: Boolean(accessGranted),
+    finalAmountValue: String(finalAmountValue || ''),
+    paymentId: paymentId || null,
+    eventType,
+  };
+
+  const history = await readPromoUsageHistory();
+  await writePromoUsageHistory([entry, ...history]);
+  return entry;
 };
 
 const readEntitlements = async () => readJsonObject(ENTITLEMENTS_FILE_PATH, {});
@@ -393,7 +586,8 @@ app.get('/api/admin/promo-codes', async (req, res) => {
     }
 
     const entries = await getPromoEntries();
-    return res.json({ ok: true, entries });
+    const history = await readPromoUsageHistory();
+    return res.json({ ok: true, entries, history });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -425,7 +619,8 @@ app.post('/api/admin/promo-codes', async (req, res) => {
     }
 
     const savedEntries = await writePromoEntries(rawEntries, auth.userId);
-    return res.json({ ok: true, entries: savedEntries });
+    const history = await readPromoUsageHistory();
+    return res.json({ ok: true, entries: savedEntries, history });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -450,24 +645,49 @@ app.post('/api/promos/apply', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Промокод недействителен' });
     }
 
+    const availability = getPromoAvailability(promoEntry);
+    if (!availability.ok) {
+      return res.status(400).json({ ok: false, message: availability.message });
+    }
+
     const pricing = calculateDiscountedAmount(promoEntry.discountPercent);
 
     if (pricing.finalAmountValue === '0.00') {
+      const usedPromoEntry = await incrementPromoUsageCount(promoEntry.code);
       await grantEntitlement({
         userId,
         productId,
         paymentId: null,
         source: `promo:${promoEntry.code}`,
       });
+      await appendPromoUsageHistory({
+        code: promoEntry.code,
+        userId,
+        productId,
+        discountPercent: pricing.discountPercent,
+        accessGranted: true,
+        finalAmountValue: pricing.finalAmountValue,
+        eventType: 'free_access',
+      });
 
       return res.json({
         ok: true,
         message: 'Промокод применён',
         unlocksAccess: true,
-        promo: promoEntry,
+        promo: usedPromoEntry || promoEntry,
         pricing,
       });
     }
+
+    await appendPromoUsageHistory({
+      code: promoEntry.code,
+      userId,
+      productId,
+      discountPercent: pricing.discountPercent,
+      accessGranted: false,
+      finalAmountValue: pricing.finalAmountValue,
+      eventType: 'discount_applied',
+    });
 
     return res.json({
       ok: true,
@@ -508,16 +728,35 @@ app.post('/api/payments/create', async (req, res) => {
     if (!promoEntry) {
       return res.status(400).json({ ok: false, message: 'Промокод недействителен' });
     }
+
+    const availability = getPromoAvailability(promoEntry);
+    if (!availability.ok) {
+      return res.status(400).json({ ok: false, message: availability.message });
+    }
   }
 
   const pricing = calculateDiscountedAmount(promoEntry?.discountPercent ?? 0);
   if (pricing.finalAmountValue === '0.00') {
+    if (promoEntry) {
+      promoEntry = await incrementPromoUsageCount(promoEntry.code) || promoEntry;
+    }
     await grantEntitlement({
       userId,
       productId,
       paymentId: null,
       source: promoEntry ? `promo:${promoEntry.code}` : 'payment',
     });
+    if (promoEntry) {
+      await appendPromoUsageHistory({
+        code: promoEntry.code,
+        userId,
+        productId,
+        discountPercent: pricing.discountPercent,
+        accessGranted: true,
+        finalAmountValue: pricing.finalAmountValue,
+        eventType: 'free_access',
+      });
+    }
 
     return res.json({
       ok: true,
@@ -622,12 +861,26 @@ app.get('/api/payments/:paymentId', async (req, res) => {
     let unlocked = await hasEntitlement({ userId, productId });
 
     if (!unlocked && isAllowedFinalStatus && isProductValid) {
+      const paymentPromoCode = normalizePromoCode(responseBody?.metadata?.promo_code);
       await grantEntitlement({
         userId,
         productId,
         paymentId: responseBody.id,
-        source: 'payment',
+        source: paymentPromoCode ? `payment:${paymentPromoCode}` : 'payment',
       });
+      if (paymentPromoCode) {
+        await incrementPromoUsageCount(paymentPromoCode);
+        await appendPromoUsageHistory({
+          code: paymentPromoCode,
+          userId,
+          productId,
+          discountPercent: responseBody?.metadata?.discount_percent,
+          accessGranted: true,
+          finalAmountValue: responseBody?.amount?.value,
+          paymentId: responseBody.id,
+          eventType: 'payment_confirmed',
+        });
+      }
       unlocked = true;
     }
 
